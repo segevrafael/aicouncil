@@ -1,29 +1,28 @@
-"""Supabase database client for LLM Council."""
+"""Supabase database client for LLM Council - using httpx REST API."""
 
 import os
+import uuid
+import httpx
 from typing import Optional, List, Dict, Any
 from datetime import datetime
-from supabase import create_client, Client
 
-# Initialize Supabase client
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")  # Use service role for backend
+# Supabase configuration
+SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
+SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 
-_supabase_client: Optional[Client] = None
+# Base headers for Supabase REST API
+def _get_headers():
+    return {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json",
+        "Prefer": "return=representation",
+    }
 
 
-def get_client() -> Client:
-    """Get or create Supabase client."""
-    global _supabase_client
-
-    if _supabase_client is None:
-        if not SUPABASE_URL or not SUPABASE_KEY:
-            raise ValueError(
-                "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY environment variables must be set"
-            )
-        _supabase_client = create_client(SUPABASE_URL, SUPABASE_KEY)
-
-    return _supabase_client
+def _rest_url(table: str) -> str:
+    """Get the REST API URL for a table."""
+    return f"{SUPABASE_URL}/rest/v1/{table}"
 
 
 # =============================================================================
@@ -40,8 +39,6 @@ def create_session(
     enhancements: Optional[List[str]] = None
 ) -> Dict[str, Any]:
     """Create a new session."""
-    client = get_client()
-
     data = {
         "id": session_id,
         "council_type": council_type,
@@ -52,62 +49,90 @@ def create_session(
         "enhancements": enhancements,
     }
 
-    result = client.table("sessions").insert(data).execute()
-    return result.data[0] if result.data else None
+    with httpx.Client() as client:
+        response = client.post(
+            _rest_url("sessions"),
+            headers=_get_headers(),
+            json=data
+        )
+        response.raise_for_status()
+        result = response.json()
+        return result[0] if isinstance(result, list) and result else result
 
 
 def get_session(session_id: str) -> Optional[Dict[str, Any]]:
     """Get a session by ID with all its messages."""
-    client = get_client()
+    with httpx.Client() as client:
+        # Get session
+        response = client.get(
+            _rest_url("sessions"),
+            headers=_get_headers(),
+            params={"id": f"eq.{session_id}"}
+        )
+        response.raise_for_status()
+        sessions = response.json()
 
-    # Get session
-    result = client.table("sessions").select("*").eq("id", session_id).execute()
+        if not sessions:
+            return None
 
-    if not result.data:
-        return None
+        session = sessions[0]
 
-    session = result.data[0]
+        # Get messages for this session
+        msg_response = client.get(
+            _rest_url("messages"),
+            headers=_get_headers(),
+            params={
+                "session_id": f"eq.{session_id}",
+                "order": "created_at.asc"
+            }
+        )
+        msg_response.raise_for_status()
+        session["messages"] = msg_response.json() or []
 
-    # Get messages for this session
-    messages_result = client.table("messages")\
-        .select("*")\
-        .eq("session_id", session_id)\
-        .order("created_at")\
-        .execute()
-
-    session["messages"] = messages_result.data or []
-    return session
+        return session
 
 
 def list_sessions(limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
     """List all sessions with metadata."""
-    client = get_client()
+    with httpx.Client() as client:
+        # Get sessions
+        response = client.get(
+            _rest_url("sessions"),
+            headers=_get_headers(),
+            params={
+                "order": "updated_at.desc",
+                "offset": str(offset),
+                "limit": str(limit),
+            }
+        )
+        response.raise_for_status()
+        sessions = response.json() or []
 
-    result = client.table("sessions")\
-        .select("*, messages(count)")\
-        .order("updated_at", desc=True)\
-        .range(offset, offset + limit - 1)\
-        .execute()
+        # Get message counts for each session
+        for session in sessions:
+            count_response = client.get(
+                _rest_url("messages"),
+                headers={**_get_headers(), "Prefer": "count=exact"},
+                params={
+                    "session_id": f"eq.{session['id']}",
+                    "select": "id",
+                }
+            )
+            # Parse count from content-range header
+            content_range = count_response.headers.get("content-range", "")
+            if "/" in content_range:
+                try:
+                    session["message_count"] = int(content_range.split("/")[1])
+                except (ValueError, IndexError):
+                    session["message_count"] = 0
+            else:
+                session["message_count"] = len(count_response.json() or [])
 
-    sessions = []
-    for row in result.data or []:
-        session = dict(row)
-        # Handle the count aggregation
-        message_count = row.get("messages", [])
-        if isinstance(message_count, list) and len(message_count) > 0:
-            session["message_count"] = message_count[0].get("count", 0)
-        else:
-            session["message_count"] = 0
-        del session["messages"]
-        sessions.append(session)
-
-    return sessions
+        return sessions
 
 
 def update_session(session_id: str, **kwargs) -> Optional[Dict[str, Any]]:
     """Update session fields."""
-    client = get_client()
-
     allowed_fields = ["title", "council_type", "council_mode", "models", "chairman_model",
                       "roles_enabled", "enhancements", "tags"]
 
@@ -116,20 +141,28 @@ def update_session(session_id: str, **kwargs) -> Optional[Dict[str, Any]]:
     if not updates:
         return get_session(session_id)
 
-    result = client.table("sessions")\
-        .update(updates)\
-        .eq("id", session_id)\
-        .execute()
+    with httpx.Client() as client:
+        response = client.patch(
+            _rest_url("sessions"),
+            headers=_get_headers(),
+            params={"id": f"eq.{session_id}"},
+            json=updates
+        )
+        response.raise_for_status()
 
     return get_session(session_id)
 
 
 def delete_session(session_id: str) -> bool:
     """Delete a session and all its messages."""
-    client = get_client()
-
-    result = client.table("sessions").delete().eq("id", session_id).execute()
-    return len(result.data) > 0 if result.data else False
+    with httpx.Client() as client:
+        response = client.delete(
+            _rest_url("sessions"),
+            headers=_get_headers(),
+            params={"id": f"eq.{session_id}"}
+        )
+        response.raise_for_status()
+        return True
 
 
 # =============================================================================
@@ -148,9 +181,6 @@ def add_message(
     metadata: Optional[Dict] = None
 ) -> Dict[str, Any]:
     """Add a message to a session."""
-    import uuid
-
-    client = get_client()
     message_id = str(uuid.uuid4())
 
     data = {
@@ -166,29 +196,39 @@ def add_message(
         "metadata": metadata,
     }
 
-    result = client.table("messages").insert(data).execute()
+    with httpx.Client() as client:
+        response = client.post(
+            _rest_url("messages"),
+            headers=_get_headers(),
+            json=data
+        )
+        response.raise_for_status()
 
-    # Update session's updated_at (trigger should handle this, but explicit is safer)
-    client.table("sessions")\
-        .update({"updated_at": datetime.utcnow().isoformat()})\
-        .eq("id", session_id)\
-        .execute()
+        # Update session's updated_at
+        client.patch(
+            _rest_url("sessions"),
+            headers=_get_headers(),
+            params={"id": f"eq.{session_id}"},
+            json={"updated_at": datetime.utcnow().isoformat()}
+        )
 
     return {"id": message_id, "role": role, "content": content}
 
 
 def get_messages(session_id: str, limit: int = 100) -> List[Dict[str, Any]]:
     """Get messages for a session."""
-    client = get_client()
-
-    result = client.table("messages")\
-        .select("*")\
-        .eq("session_id", session_id)\
-        .order("created_at")\
-        .limit(limit)\
-        .execute()
-
-    return result.data or []
+    with httpx.Client() as client:
+        response = client.get(
+            _rest_url("messages"),
+            headers=_get_headers(),
+            params={
+                "session_id": f"eq.{session_id}",
+                "order": "created_at.asc",
+                "limit": str(limit)
+            }
+        )
+        response.raise_for_status()
+        return response.json() or []
 
 
 # =============================================================================
@@ -197,24 +237,42 @@ def get_messages(session_id: str, limit: int = 100) -> List[Dict[str, Any]]:
 
 def search_messages(query: str, limit: int = 20) -> List[Dict[str, Any]]:
     """Full-text search across messages using PostgreSQL."""
-    client = get_client()
+    # Escape special characters for text search
+    safe_query = query.replace("'", "''")
 
-    # Use PostgreSQL full-text search
-    result = client.table("messages")\
-        .select("*, sessions!inner(title)")\
-        .text_search("content", query)\
-        .limit(limit)\
-        .execute()
+    with httpx.Client() as client:
+        # Use ilike for simple search (full-text search requires RPC)
+        response = client.get(
+            _rest_url("messages"),
+            headers=_get_headers(),
+            params={
+                "content": f"ilike.%{safe_query}%",
+                "limit": str(limit),
+                "order": "created_at.desc",
+            }
+        )
+        response.raise_for_status()
+        messages = response.json() or []
 
-    results = []
-    for row in result.data or []:
-        result_item = dict(row)
-        result_item["session_title"] = row.get("sessions", {}).get("title", "Unknown")
-        if "sessions" in result_item:
-            del result_item["sessions"]
-        results.append(result_item)
+        # Get session titles for each message
+        results = []
+        session_cache = {}
 
-    return results
+        for msg in messages:
+            session_id = msg.get("session_id")
+            if session_id not in session_cache:
+                sess_response = client.get(
+                    _rest_url("sessions"),
+                    headers=_get_headers(),
+                    params={"id": f"eq.{session_id}", "select": "title"}
+                )
+                sess_data = sess_response.json()
+                session_cache[session_id] = sess_data[0].get("title") if sess_data else "Unknown"
+
+            msg["session_title"] = session_cache[session_id]
+            results.append(msg)
+
+        return results
 
 
 # =============================================================================
@@ -223,16 +281,15 @@ def search_messages(query: str, limit: int = 20) -> List[Dict[str, Any]]:
 
 def get_conversation_state(session_id: str) -> Optional[Dict[str, Any]]:
     """Get the state of a multi-round conversation."""
-    client = get_client()
-
-    result = client.table("conversation_state")\
-        .select("*")\
-        .eq("session_id", session_id)\
-        .execute()
-
-    if result.data:
-        return result.data[0]
-    return None
+    with httpx.Client() as client:
+        response = client.get(
+            _rest_url("conversation_state"),
+            headers=_get_headers(),
+            params={"session_id": f"eq.{session_id}"}
+        )
+        response.raise_for_status()
+        result = response.json()
+        return result[0] if result else None
 
 
 def save_conversation_state(
@@ -247,8 +304,6 @@ def save_conversation_state(
     roles_enabled: bool
 ) -> Dict[str, Any]:
     """Save or update conversation state."""
-    client = get_client()
-
     data = {
         "session_id": session_id,
         "mode": mode,
@@ -261,24 +316,41 @@ def save_conversation_state(
         "roles_enabled": roles_enabled,
     }
 
-    # Upsert - insert or update if exists
-    result = client.table("conversation_state")\
-        .upsert(data, on_conflict="session_id")\
-        .execute()
+    with httpx.Client() as client:
+        # Check if exists
+        existing = get_conversation_state(session_id)
 
-    return result.data[0] if result.data else None
+        if existing:
+            # Update
+            response = client.patch(
+                _rest_url("conversation_state"),
+                headers=_get_headers(),
+                params={"session_id": f"eq.{session_id}"},
+                json=data
+            )
+        else:
+            # Insert
+            response = client.post(
+                _rest_url("conversation_state"),
+                headers=_get_headers(),
+                json=data
+            )
+
+        response.raise_for_status()
+        result = response.json()
+        return result[0] if isinstance(result, list) and result else result
 
 
 def delete_conversation_state(session_id: str) -> bool:
     """Delete conversation state."""
-    client = get_client()
-
-    result = client.table("conversation_state")\
-        .delete()\
-        .eq("session_id", session_id)\
-        .execute()
-
-    return len(result.data) > 0 if result.data else False
+    with httpx.Client() as client:
+        response = client.delete(
+            _rest_url("conversation_state"),
+            headers=_get_headers(),
+            params={"session_id": f"eq.{session_id}"}
+        )
+        response.raise_for_status()
+        return True
 
 
 # =============================================================================
@@ -287,15 +359,14 @@ def delete_conversation_state(session_id: str) -> bool:
 
 def get_presets() -> List[Dict[str, Any]]:
     """Get all model presets."""
-    client = get_client()
-
-    result = client.table("model_presets")\
-        .select("*")\
-        .order("is_default", desc=True)\
-        .order("name")\
-        .execute()
-
-    return result.data or []
+    with httpx.Client() as client:
+        response = client.get(
+            _rest_url("model_presets"),
+            headers=_get_headers(),
+            params={"order": "is_default.desc,name.asc"}
+        )
+        response.raise_for_status()
+        return response.json() or []
 
 
 def create_preset(
@@ -306,8 +377,6 @@ def create_preset(
     description: Optional[str] = None
 ) -> Dict[str, Any]:
     """Create a new model preset."""
-    client = get_client()
-
     data = {
         "id": preset_id,
         "name": name,
@@ -316,33 +385,43 @@ def create_preset(
         "description": description,
     }
 
-    result = client.table("model_presets").insert(data).execute()
-    return result.data[0] if result.data else None
+    with httpx.Client() as client:
+        response = client.post(
+            _rest_url("model_presets"),
+            headers=_get_headers(),
+            json=data
+        )
+        response.raise_for_status()
+        result = response.json()
+        return result[0] if isinstance(result, list) and result else result
 
 
 def get_preset(preset_id: str) -> Optional[Dict[str, Any]]:
     """Get a preset by ID."""
-    client = get_client()
-
-    result = client.table("model_presets")\
-        .select("*")\
-        .eq("id", preset_id)\
-        .execute()
-
-    return result.data[0] if result.data else None
+    with httpx.Client() as client:
+        response = client.get(
+            _rest_url("model_presets"),
+            headers=_get_headers(),
+            params={"id": f"eq.{preset_id}"}
+        )
+        response.raise_for_status()
+        result = response.json()
+        return result[0] if result else None
 
 
 def delete_preset(preset_id: str) -> bool:
     """Delete a preset (cannot delete default presets)."""
-    client = get_client()
-
-    result = client.table("model_presets")\
-        .delete()\
-        .eq("id", preset_id)\
-        .eq("is_default", False)\
-        .execute()
-
-    return len(result.data) > 0 if result.data else False
+    with httpx.Client() as client:
+        response = client.delete(
+            _rest_url("model_presets"),
+            headers=_get_headers(),
+            params={
+                "id": f"eq.{preset_id}",
+                "is_default": "eq.false"
+            }
+        )
+        response.raise_for_status()
+        return True
 
 
 # =============================================================================
@@ -358,8 +437,6 @@ def add_prediction(
     category: Optional[str] = None
 ) -> Dict[str, Any]:
     """Log a prediction for later tracking."""
-    client = get_client()
-
     data = {
         "id": prediction_id,
         "session_id": session_id,
@@ -369,20 +446,28 @@ def add_prediction(
         "category": category,
     }
 
-    result = client.table("predictions").insert(data).execute()
-    return result.data[0] if result.data else None
+    with httpx.Client() as client:
+        response = client.post(
+            _rest_url("predictions"),
+            headers=_get_headers(),
+            json=data
+        )
+        response.raise_for_status()
+        result = response.json()
+        return result[0] if isinstance(result, list) and result else result
 
 
 def get_prediction(prediction_id: str) -> Optional[Dict[str, Any]]:
     """Get a prediction by ID."""
-    client = get_client()
-
-    result = client.table("predictions")\
-        .select("*")\
-        .eq("id", prediction_id)\
-        .execute()
-
-    return result.data[0] if result.data else None
+    with httpx.Client() as client:
+        response = client.get(
+            _rest_url("predictions"),
+            headers=_get_headers(),
+            params={"id": f"eq.{prediction_id}"}
+        )
+        response.raise_for_status()
+        result = response.json()
+        return result[0] if result else None
 
 
 def record_outcome(
@@ -392,8 +477,6 @@ def record_outcome(
     notes: Optional[str] = None
 ) -> Optional[Dict[str, Any]]:
     """Record the outcome of a prediction."""
-    client = get_client()
-
     data = {
         "outcome": outcome,
         "accuracy_score": accuracy_score,
@@ -401,27 +484,30 @@ def record_outcome(
         "outcome_recorded_at": datetime.utcnow().isoformat(),
     }
 
-    result = client.table("predictions")\
-        .update(data)\
-        .eq("id", prediction_id)\
-        .execute()
+    with httpx.Client() as client:
+        response = client.patch(
+            _rest_url("predictions"),
+            headers=_get_headers(),
+            params={"id": f"eq.{prediction_id}"},
+            json=data
+        )
+        response.raise_for_status()
 
     return get_prediction(prediction_id)
 
 
 def get_prediction_stats() -> Dict[str, Any]:
     """Get statistics on prediction accuracy."""
-    client = get_client()
+    with httpx.Client() as client:
+        # Get all predictions with outcomes
+        response = client.get(
+            _rest_url("predictions"),
+            headers=_get_headers(),
+            params={"outcome": "not.is.null"}
+        )
+        response.raise_for_status()
+        predictions = response.json() or []
 
-    # Get all predictions with outcomes
-    result = client.table("predictions")\
-        .select("*")\
-        .not_.is_("outcome", "null")\
-        .execute()
-
-    predictions = result.data or []
-
-    # Calculate stats manually (Supabase doesn't support aggregations well in client)
     total = len(predictions)
     if total == 0:
         return {
