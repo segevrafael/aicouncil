@@ -98,6 +98,7 @@ function App() {
               stage3: msg.stage_data.stage3 || msg.stage_data.summary || null,
               mode: msg.stage_data.mode || null,
               metadata: msg.stage_data.metadata || null,
+              debateRound: msg.stage_data.round || msg.debate_round || null,
             };
           }
           return msg;
@@ -258,6 +259,38 @@ function App() {
               };
               return { ...prev, messages };
             });
+            break;
+
+          // Debate mode handlers
+          case 'debate_round_start':
+            setCurrentConversation((prev) => {
+              const messages = [...prev.messages];
+              const lastIndex = messages.length - 1;
+              messages[lastIndex] = {
+                ...messages[lastIndex],
+                debateRound: event.round,
+                loading: { ...messages[lastIndex].loading, stage1: true },
+              };
+              return { ...prev, messages };
+            });
+            break;
+
+          case 'debate_round_complete':
+            setCurrentConversation((prev) => {
+              const messages = [...prev.messages];
+              const lastIndex = messages.length - 1;
+              messages[lastIndex] = {
+                ...messages[lastIndex],
+                debateRound: event.round,
+                stage1: event.data, // Debate responses render the same as stage1
+                loading: { ...messages[lastIndex].loading, stage1: false },
+              };
+              return { ...prev, messages };
+            });
+            break;
+
+          case 'debate_can_continue':
+            // Conversation state will be loaded on 'complete' event
             break;
 
           case 'title_complete':

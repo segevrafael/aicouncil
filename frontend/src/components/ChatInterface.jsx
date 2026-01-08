@@ -71,16 +71,30 @@ export default function ChatInterface({
                 </div>
               ) : (
                 <div className="assistant-message">
-                  <div className="message-label">LLM Council</div>
+                  <div className="message-label">
+                    LLM Council
+                    {msg.debateRound && (
+                      <span className="debate-round-badge">Round {msg.debateRound}</span>
+                    )}
+                  </div>
 
-                  {/* Stage 1 */}
+                  {/* Stage 1 / Debate Round */}
                   {msg.loading?.stage1 && (
                     <div className="stage-loading">
                       <div className="spinner"></div>
-                      <span>Running Stage 1: Collecting individual responses...</span>
+                      <span>
+                        {msg.debateRound
+                          ? `Running Debate Round ${msg.debateRound}...`
+                          : 'Running Stage 1: Collecting individual responses...'}
+                      </span>
                     </div>
                   )}
-                  {msg.stage1 && <Stage1 responses={msg.stage1} />}
+                  {msg.stage1 && (
+                    <Stage1
+                      responses={msg.stage1}
+                      title={msg.debateRound ? `Debate Round ${msg.debateRound}` : undefined}
+                    />
+                  )}
 
                   {/* Stage 2 */}
                   {msg.loading?.stage2 && (
@@ -97,7 +111,7 @@ export default function ChatInterface({
                     />
                   )}
 
-                  {/* Stage 3 */}
+                  {/* Stage 3 / Debate Summary */}
                   {msg.loading?.stage3 && (
                     <div className="stage-loading">
                       <div className="spinner"></div>
