@@ -477,6 +477,95 @@ Provide your critique:"""
         })
 
 
+@app.route('/api/conversations/<conversation_id>/message/stream', methods=['POST'])
+@require_auth
+def send_message_stream(conversation_id):
+    """Send a message and stream the council process using Server-Sent Events."""
+    session = db.get_session(conversation_id)
+    if session is None:
+        return jsonify({"error": "Conversation not found"}), 404
+
+    data = request.get_json() or {}
+    content = data.get('content', '')
+    mode = data.get('mode', 'synthesized')
+    council_type = data.get('council_type', 'general')
+    models = data.get('models')
+    chairman_model = data.get('chairman_model')
+    roles_enabled = data.get('roles_enabled', False)
+    enhancements = data.get('enhancements', [])
+
+    is_first_message = len(session.get("messages", [])) == 0
+
+    def generate():
+        try:
+            # Send mode info
+            yield f"data: {json.dumps({'type': 'mode', 'data': mode})}\n\n"
+
+            # Add user message
+            db.add_message(conversation_id, "user", content)
+
+            # Generate title if first message
+            if is_first_message:
+                title = run_async(generate_conversation_title(content))
+                db.update_session(conversation_id, title=title)
+                yield f"data: {json.dumps({'type': 'title_complete', 'data': {'title': title}})}\n\n"
+
+            if mode == "independent":
+                yield f"data: {json.dumps({'type': 'stage1_start'})}\n\n"
+                stage1_results = run_async(stage1_collect_responses(
+                    content, models, council_type, roles_enabled, enhancements
+                ))
+                yield f"data: {json.dumps({'type': 'stage1_complete', 'data': stage1_results})}\n\n"
+
+                db.add_message(
+                    conversation_id, "assistant",
+                    stage_data={"stage1": stage1_results, "mode": "independent"}
+                )
+
+            else:
+                # Synthesized mode (default)
+                yield f"data: {json.dumps({'type': 'stage1_start'})}\n\n"
+                stage1_results = run_async(stage1_collect_responses(
+                    content, models, council_type, roles_enabled, enhancements
+                ))
+                yield f"data: {json.dumps({'type': 'stage1_complete', 'data': stage1_results})}\n\n"
+
+                yield f"data: {json.dumps({'type': 'stage2_start'})}\n\n"
+                stage2_results, label_to_model = run_async(stage2_collect_rankings(content, stage1_results))
+                aggregate_rankings = calculate_aggregate_rankings(stage2_results, label_to_model)
+                yield f"data: {json.dumps({'type': 'stage2_complete', 'data': stage2_results, 'metadata': {'label_to_model': label_to_model, 'aggregate_rankings': aggregate_rankings}})}\n\n"
+
+                yield f"data: {json.dumps({'type': 'stage3_start'})}\n\n"
+                stage3_result = run_async(stage3_synthesize_final(content, stage1_results, stage2_results))
+                yield f"data: {json.dumps({'type': 'stage3_complete', 'data': stage3_result})}\n\n"
+
+                db.add_message(
+                    conversation_id, "assistant",
+                    content=stage3_result.get("synthesis", ""),
+                    stage_data={
+                        "stage1": stage1_results,
+                        "stage2": stage2_results,
+                        "stage3": stage3_result,
+                        "mode": "synthesized"
+                    }
+                )
+
+            yield f"data: {json.dumps({'type': 'complete'})}\n\n"
+
+        except Exception as e:
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype='text/event-stream',
+        headers={
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+            'X-Accel-Buffering': 'no',
+        }
+    )
+
+
 # =============================================================================
 # DEBATE ENDPOINTS
 # =============================================================================
