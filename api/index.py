@@ -685,8 +685,15 @@ def continue_conversation(conversation_id):
             roles_enabled=state.get("roles_enabled", False),
         )
 
+        # Create summary content for this round
+        round_summary = f"**Debate Round {next_round}**\n\n" + "\n\n---\n\n".join([
+            f"**{r.get('model_name', r.get('model', 'Model'))}**: {r.get('response', '')[:500]}..."
+            if len(r.get('response', '')) > 500 else f"**{r.get('model_name', r.get('model', 'Model'))}**: {r.get('response', '')}"
+            for r in round_responses
+        ])
         db.add_message(
             conversation_id, "assistant",
+            content=round_summary,
             stage_data={"round": next_round, "responses": round_responses, "mode": "debate"},
             debate_round=next_round
         )
@@ -763,9 +770,11 @@ def end_conversation(conversation_id):
 
         db.delete_conversation_state(conversation_id)
 
+        # debate_summary returns {"model": ..., "response": ...} not {"synthesis": ...}
+        summary_content = f"**Debate Summary** (by {summary.get('model_name', 'Chairman')})\n\n{summary.get('response', '')}"
         db.add_message(
             conversation_id, "assistant",
-            content=summary.get("synthesis", ""),
+            content=summary_content,
             stage_data={"summary": summary, "mode": "debate_summary"}
         )
 
