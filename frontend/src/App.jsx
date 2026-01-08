@@ -166,11 +166,15 @@ function App() {
       };
 
       // Add the partial assistant message
-      setCurrentConversation((prev) => ({
-        ...prev,
-        messages: [...prev.messages, assistantMessage],
-      }));
+      setCurrentConversation((prev) => {
+        console.log('Adding assistant message, current messages:', prev.messages.length);
+        return {
+          ...prev,
+          messages: [...prev.messages, assistantMessage],
+        };
+      });
 
+      console.log('Starting SSE stream with mode:', selectedMode);
       // Send message with streaming and options
       const options = {
         mode: selectedMode,
@@ -180,6 +184,7 @@ function App() {
       };
 
       await api.sendMessageStream(currentConversationId, content, (eventType, event) => {
+        console.log('SSE Event:', eventType, event);
         switch (eventType) {
           case 'mode':
             // Mode info received
