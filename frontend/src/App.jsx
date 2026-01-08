@@ -85,6 +85,25 @@ function App() {
   const loadConversation = async (id) => {
     try {
       const conv = await api.getConversation(id);
+
+      // Transform messages to extract stage_data into expected format
+      if (conv.messages) {
+        conv.messages = conv.messages.map(msg => {
+          if (msg.role === 'assistant' && msg.stage_data) {
+            // Extract stages from stage_data to top level for rendering
+            return {
+              ...msg,
+              stage1: msg.stage_data.stage1 || msg.stage_data.responses || null,
+              stage2: msg.stage_data.stage2 || null,
+              stage3: msg.stage_data.stage3 || msg.stage_data.summary || null,
+              mode: msg.stage_data.mode || null,
+              metadata: msg.stage_data.metadata || null,
+            };
+          }
+          return msg;
+        });
+      }
+
       setCurrentConversation(conv);
     } catch (error) {
       console.error('Failed to load conversation:', error);
