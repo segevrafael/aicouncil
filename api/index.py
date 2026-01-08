@@ -616,9 +616,121 @@ def send_message_stream(conversation_id):
                     }
                 )
 
+            elif mode == "adversarial":
+                # Adversarial mode: 3 responses + devil's advocate critique
+                models_list = models or DEFAULT_COUNCIL_MODELS
+                responders = models_list[:3]
+                devils_advocate = models_list[3] if len(models_list) > 3 else models_list[0]
+
+                yield f"data: {json.dumps({'type': 'stage1_start'})}\n\n"
+                initial_responses = run_async(stage1_collect_responses(
+                    content, responders, council_type, roles_enabled, enhancements
+                ))
+                yield f"data: {json.dumps({'type': 'stage1_complete', 'data': initial_responses})}\n\n"
+
+                # Devil's advocate critique
+                yield f"data: {json.dumps({'type': 'critique_start'})}\n\n"
+                responses_text = "\n\n".join([
+                    f"[{r.get('model_name', r['model'])}]: {r['response']}"
+                    for r in initial_responses
+                ])
+
+                devils_advocate_prompt = f"""The user asked: {content}
+
+Three AI models have provided the following responses:
+
+{responses_text}
+
+You are the Devil's Advocate. Your job is to:
+1. Challenge the assumptions made by the other models
+2. Point out flaws, risks, or overlooked considerations
+3. Present counterarguments or alternative perspectives
+4. Be constructively critical
+
+Provide your critique:"""
+
+                from backend.openrouter import query_model
+                critique_response = run_async(query_model(
+                    devils_advocate, [{"role": "user", "content": devils_advocate_prompt}]
+                ))
+
+                critique = {
+                    "model": devils_advocate,
+                    "model_name": f"{devils_advocate.split('/')[-1]} (Devil's Advocate)",
+                    "response": critique_response.get('content', '') if critique_response else "Error generating critique",
+                    "role": "devils_advocate"
+                }
+                yield f"data: {json.dumps({'type': 'critique_complete', 'data': critique})}\n\n"
+
+                # Save to database
+                summary = "**Initial Responses:**\n\n" + "\n\n---\n\n".join([
+                    f"**{r.get('model_name', r['model'])}**: {r.get('response', '')[:500]}..."
+                    if len(r.get('response', '')) > 500 else f"**{r.get('model_name', r['model'])}**: {r.get('response', '')}"
+                    for r in initial_responses
+                ])
+                summary += f"\n\n---\n\n**Devil's Advocate ({critique['model_name']}):**\n\n{critique['response']}"
+                db.add_message(
+                    conversation_id, "assistant",
+                    content=summary,
+                    stage_data={
+                        "initial_responses": initial_responses,
+                        "devils_advocate": critique,
+                        "mode": "adversarial"
+                    }
+                )
+
+            elif mode == "socratic":
+                # Socratic mode: council asks questions
+                yield f"data: {json.dumps({'type': 'questions_start'})}\n\n"
+                questions = run_async(socratic_questions(content, models, council_type, roles_enabled))
+                yield f"data: {json.dumps({'type': 'questions_complete', 'data': questions})}\n\n"
+
+                # Save state for continuation
+                db.save_conversation_state(
+                    session_id=conversation_id,
+                    mode="socratic",
+                    query=content,
+                    rounds=[questions],
+                    current_round=1,
+                    models=models or DEFAULT_COUNCIL_MODELS,
+                    chairman_model=chairman_model or DEFAULT_CHAIRMAN_MODEL,
+                    council_type=council_type,
+                    roles_enabled=roles_enabled,
+                )
+
+                # Save to database
+                questions_summary = "**The Council asks:**\n\n" + "\n\n---\n\n".join([
+                    f"**{q.get('model_name', q['model'])}**: {q.get('response', '')}"
+                    for q in questions
+                ])
+                db.add_message(
+                    conversation_id, "assistant",
+                    content=questions_summary,
+                    stage_data={"questions": questions, "mode": "socratic"}
+                )
+
+            elif mode == "scenario":
+                # Scenario planning mode
+                yield f"data: {json.dumps({'type': 'scenarios_start'})}\n\n"
+                result = run_async(scenario_planning(content, models, chairman_model, council_type))
+                yield f"data: {json.dumps({'type': 'scenarios_complete', 'data': result['scenarios']})}\n\n"
+
+                yield f"data: {json.dumps({'type': 'stage3_start'})}\n\n"
+                yield f"data: {json.dumps({'type': 'stage3_complete', 'data': result['synthesis']})}\n\n"
+
+                db.add_message(
+                    conversation_id, "assistant",
+                    content=result["synthesis"].get("response", ""),
+                    stage_data={
+                        "scenarios": result["scenarios"],
+                        "synthesis": result["synthesis"],
+                        "mode": "scenario"
+                    }
+                )
+
             else:
-                # Other modes - use non-streaming endpoint
-                yield f"data: {json.dumps({'type': 'error', 'message': f'Mode {mode} should use non-streaming endpoint'})}\n\n"
+                # Unknown mode - fallback error
+                yield f"data: {json.dumps({'type': 'error', 'message': f'Unknown mode: {mode}'})}\n\n"
 
             yield f"data: {json.dumps({'type': 'complete'})}\n\n"
 

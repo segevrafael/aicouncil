@@ -119,6 +119,53 @@ export default function ChatInterface({
                     </div>
                   )}
                   {msg.stage3 && <Stage3 finalResponse={msg.stage3} />}
+
+                  {/* Adversarial Mode: Devil's Advocate Critique */}
+                  {msg.loading?.critique && (
+                    <div className="stage-loading">
+                      <div className="spinner"></div>
+                      <span>Devil's Advocate is preparing critique...</span>
+                    </div>
+                  )}
+                  {msg.critique && (
+                    <div className="stage critique-section">
+                      <h3 className="stage-title">Devil's Advocate</h3>
+                      <div className="critique-content">
+                        <div className="model-name">{msg.critique.model_name || msg.critique.model}</div>
+                        <div className="response-text markdown-content">
+                          <ReactMarkdown>{msg.critique.response}</ReactMarkdown>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Socratic Mode: Council Questions */}
+                  {msg.loading?.questions && (
+                    <div className="stage-loading">
+                      <div className="spinner"></div>
+                      <span>Council is formulating questions...</span>
+                    </div>
+                  )}
+                  {msg.questions && (
+                    <Stage1
+                      responses={msg.questions}
+                      title="Council Questions"
+                    />
+                  )}
+
+                  {/* Scenario Mode: Scenarios */}
+                  {msg.loading?.scenarios && (
+                    <div className="stage-loading">
+                      <div className="spinner"></div>
+                      <span>Generating scenarios...</span>
+                    </div>
+                  )}
+                  {msg.scenarios && (
+                    <Stage1
+                      responses={msg.scenarios}
+                      title="Scenario Analysis"
+                    />
+                  )}
                 </div>
               )}
             </div>

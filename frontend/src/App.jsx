@@ -93,12 +93,20 @@ function App() {
             // Extract stages from stage_data to top level for rendering
             return {
               ...msg,
-              stage1: msg.stage_data.stage1 || msg.stage_data.responses || null,
+              // Standard stages
+              stage1: msg.stage_data.stage1 || msg.stage_data.responses || msg.stage_data.initial_responses || null,
               stage2: msg.stage_data.stage2 || null,
-              stage3: msg.stage_data.stage3 || msg.stage_data.summary || null,
+              stage3: msg.stage_data.stage3 || msg.stage_data.summary || msg.stage_data.synthesis || null,
               mode: msg.stage_data.mode || null,
               metadata: msg.stage_data.metadata || null,
+              // Debate mode
               debateRound: msg.stage_data.round || msg.debate_round || null,
+              // Adversarial mode
+              critique: msg.stage_data.devils_advocate || null,
+              // Socratic mode
+              questions: msg.stage_data.questions || null,
+              // Scenario mode
+              scenarios: msg.stage_data.scenarios || null,
             };
           }
           return msg;
@@ -296,6 +304,84 @@ function App() {
 
           case 'debate_can_continue':
             // Conversation state will be loaded on 'complete' event
+            break;
+
+          // Adversarial mode handlers
+          case 'critique_start':
+            setCurrentConversation((prev) => {
+              const messages = [...prev.messages];
+              const lastIndex = messages.length - 1;
+              messages[lastIndex] = {
+                ...messages[lastIndex],
+                loading: { ...messages[lastIndex].loading, critique: true },
+              };
+              return { ...prev, messages };
+            });
+            break;
+
+          case 'critique_complete':
+            setCurrentConversation((prev) => {
+              const messages = [...prev.messages];
+              const lastIndex = messages.length - 1;
+              messages[lastIndex] = {
+                ...messages[lastIndex],
+                critique: event.data,
+                loading: { ...messages[lastIndex].loading, critique: false },
+              };
+              return { ...prev, messages };
+            });
+            break;
+
+          // Socratic mode handlers
+          case 'questions_start':
+            setCurrentConversation((prev) => {
+              const messages = [...prev.messages];
+              const lastIndex = messages.length - 1;
+              messages[lastIndex] = {
+                ...messages[lastIndex],
+                loading: { ...messages[lastIndex].loading, questions: true },
+              };
+              return { ...prev, messages };
+            });
+            break;
+
+          case 'questions_complete':
+            setCurrentConversation((prev) => {
+              const messages = [...prev.messages];
+              const lastIndex = messages.length - 1;
+              messages[lastIndex] = {
+                ...messages[lastIndex],
+                questions: event.data,
+                loading: { ...messages[lastIndex].loading, questions: false },
+              };
+              return { ...prev, messages };
+            });
+            break;
+
+          // Scenario mode handlers
+          case 'scenarios_start':
+            setCurrentConversation((prev) => {
+              const messages = [...prev.messages];
+              const lastIndex = messages.length - 1;
+              messages[lastIndex] = {
+                ...messages[lastIndex],
+                loading: { ...messages[lastIndex].loading, scenarios: true },
+              };
+              return { ...prev, messages };
+            });
+            break;
+
+          case 'scenarios_complete':
+            setCurrentConversation((prev) => {
+              const messages = [...prev.messages];
+              const lastIndex = messages.length - 1;
+              messages[lastIndex] = {
+                ...messages[lastIndex],
+                scenarios: event.data,
+                loading: { ...messages[lastIndex].loading, scenarios: false },
+              };
+              return { ...prev, messages };
+            });
             break;
 
           case 'title_complete':
