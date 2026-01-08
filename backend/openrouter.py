@@ -55,22 +55,29 @@ async def query_model(
 
 async def query_models_parallel(
     models: List[str],
-    messages: List[Dict[str, str]]
+    messages_or_dict
 ) -> Dict[str, Optional[Dict[str, Any]]]:
     """
     Query multiple models in parallel.
 
     Args:
         models: List of OpenRouter model identifiers
-        messages: List of message dicts to send to each model
+        messages_or_dict: Either:
+            - List of message dicts to send to ALL models (broadcast)
+            - Dict mapping model ID to its specific message list (per-model)
 
     Returns:
         Dict mapping model identifier to response dict (or None if failed)
     """
     import asyncio
 
-    # Create tasks for all models
-    tasks = [query_model(model, messages) for model in models]
+    # Determine if we have per-model messages or broadcast
+    if isinstance(messages_or_dict, dict):
+        # Per-model messages: each model gets its own message list
+        tasks = [query_model(model, messages_or_dict.get(model, [])) for model in models]
+    else:
+        # Broadcast: same messages to all models
+        tasks = [query_model(model, messages_or_dict) for model in models]
 
     # Wait for all to complete
     responses = await asyncio.gather(*tasks)
