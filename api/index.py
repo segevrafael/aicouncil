@@ -290,13 +290,27 @@ def send_message(conversation_id):
         title = run_async(generate_conversation_title(content))
         db.update_session(conversation_id, title=title)
 
+    # Helper to create content summary
+    def make_summary(responses, prefix=""):
+        parts = []
+        for r in responses:
+            resp = r.get('response', '')
+            name = r.get('model_name', r.get('model', 'Model'))
+            if len(resp) > 500:
+                parts.append(f"**{name}**: {resp[:500]}...")
+            else:
+                parts.append(f"**{name}**: {resp}")
+        return prefix + "\n\n---\n\n".join(parts)
+
     # Route to mode handler
     if mode == "independent":
         stage1_results = run_async(stage1_collect_responses(
             content, models, council_type, roles_enabled, enhancements
         ))
+        summary = make_summary(stage1_results)
         db.add_message(
             conversation_id, "assistant",
+            content=summary,
             stage_data={"stage1": stage1_results, "mode": "independent"}
         )
         return jsonify({
@@ -343,8 +357,10 @@ def send_message(conversation_id):
             roles_enabled=roles_enabled,
         )
 
+        summary = make_summary(round1_responses, "**Debate Round 1**\n\n")
         db.add_message(
             conversation_id, "assistant",
+            content=summary,
             stage_data={"round": 1, "responses": round1_responses, "mode": "debate"},
             debate_round=1
         )
@@ -396,8 +412,12 @@ Provide your critique:"""
             "role": "devils_advocate"
         }
 
+        # Create summary with initial responses + critique
+        summary = "**Initial Responses:**\n\n" + make_summary(initial_responses)
+        summary += f"\n\n---\n\n**Devil's Advocate ({critique['model_name']}):**\n\n{critique['response']}"
         db.add_message(
             conversation_id, "assistant",
+            content=summary,
             stage_data={
                 "initial_responses": initial_responses,
                 "devils_advocate": critique,
@@ -425,8 +445,11 @@ Provide your critique:"""
             roles_enabled=roles_enabled,
         )
 
+        # Create summary of questions
+        questions_summary = "**The Council asks:**\n\n" + make_summary(questions)
         db.add_message(
             conversation_id, "assistant",
+            content=questions_summary,
             stage_data={"questions": questions, "mode": "socratic"}
         )
         return jsonify({
@@ -517,13 +540,56 @@ def send_message_stream(conversation_id):
                 ))
                 yield f"data: {json.dumps({'type': 'stage1_complete', 'data': stage1_results})}\n\n"
 
+                # Create summary content for storage
+                summary = "\n\n---\n\n".join([
+                    f"**{r.get('model_name', r['model'])}**: {r['response'][:500]}..."
+                    if len(r.get('response', '')) > 500 else f"**{r.get('model_name', r['model'])}**: {r.get('response', '')}"
+                    for r in stage1_results
+                ])
                 db.add_message(
                     conversation_id, "assistant",
+                    content=summary,
                     stage_data={"stage1": stage1_results, "mode": "independent"}
                 )
 
-            else:
-                # Synthesized mode (default)
+            elif mode == "debate":
+                # Debate mode: Round 1 - independent responses
+                yield f"data: {json.dumps({'type': 'debate_round_start', 'round': 1})}\n\n"
+                round1_responses = run_async(debate_round(
+                    content, [], 1, models, council_type, roles_enabled
+                ))
+                yield f"data: {json.dumps({'type': 'debate_round_complete', 'round': 1, 'data': round1_responses})}\n\n"
+
+                # Save state for continuation
+                db.save_conversation_state(
+                    session_id=conversation_id,
+                    mode="debate",
+                    query=content,
+                    rounds=[round1_responses],
+                    current_round=1,
+                    models=models or DEFAULT_COUNCIL_MODELS,
+                    chairman_model=chairman_model or DEFAULT_CHAIRMAN_MODEL,
+                    council_type=council_type,
+                    roles_enabled=roles_enabled,
+                )
+
+                # Create summary content for storage
+                summary = f"**Debate Round 1**\n\n" + "\n\n---\n\n".join([
+                    f"**{r.get('model_name', r['model'])}**: {r.get('response', '')[:500]}..."
+                    if len(r.get('response', '')) > 500 else f"**{r.get('model_name', r['model'])}**: {r.get('response', '')}"
+                    for r in round1_responses
+                ])
+                db.add_message(
+                    conversation_id, "assistant",
+                    content=summary,
+                    stage_data={"round": 1, "responses": round1_responses, "mode": "debate"},
+                    debate_round=1
+                )
+
+                yield f"data: {json.dumps({'type': 'debate_can_continue', 'message': 'Round 1 complete. Use Continue for more rounds or End to summarize.'})}\n\n"
+
+            elif mode == "synthesized":
+                # Synthesized mode: 3-stage process
                 yield f"data: {json.dumps({'type': 'stage1_start'})}\n\n"
                 stage1_results = run_async(stage1_collect_responses(
                     content, models, council_type, roles_enabled, enhancements
@@ -550,10 +616,16 @@ def send_message_stream(conversation_id):
                     }
                 )
 
+            else:
+                # Other modes - use non-streaming endpoint
+                yield f"data: {json.dumps({'type': 'error', 'message': f'Mode {mode} should use non-streaming endpoint'})}\n\n"
+
             yield f"data: {json.dumps({'type': 'complete'})}\n\n"
 
         except Exception as e:
-            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+            import traceback
+            error_detail = traceback.format_exc()
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e), 'detail': error_detail})}\n\n"
 
     return Response(
         stream_with_context(generate()),
