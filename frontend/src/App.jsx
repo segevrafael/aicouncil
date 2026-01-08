@@ -1,26 +1,77 @@
 import { useState, useEffect } from 'react';
 import Sidebar from './components/Sidebar';
 import ChatInterface from './components/ChatInterface';
-import { api } from './api';
+import ModeSelector from './components/ModeSelector';
+import DebateControls from './components/DebateControls';
+import Login from './components/Login';
+import { api, isAuthenticated, clearAuthToken } from './api';
 import './App.css';
 
 function App() {
+  // Auth state
+  const [authenticated, setAuthenticated] = useState(isAuthenticated());
+
+  // Conversations state
   const [conversations, setConversations] = useState([]);
   const [currentConversationId, setCurrentConversationId] = useState(null);
   const [currentConversation, setCurrentConversation] = useState(null);
+  const [conversationState, setConversationState] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  // Load conversations on mount
+  // Config state
+  const [config, setConfig] = useState(null);
+
+  // Council settings state
+  const [selectedMode, setSelectedMode] = useState('synthesized');
+  const [selectedCouncilType, setSelectedCouncilType] = useState('general');
+  const [rolesEnabled, setRolesEnabled] = useState(false);
+  const [selectedEnhancements, setSelectedEnhancements] = useState([]);
+
+  // Load config and conversations on auth
   useEffect(() => {
-    loadConversations();
-  }, []);
+    if (authenticated) {
+      loadConfig();
+      loadConversations();
+    }
+  }, [authenticated]);
+
+  const handleLogin = () => {
+    setAuthenticated(true);
+  };
+
+  const handleLogout = () => {
+    clearAuthToken();
+    setAuthenticated(false);
+    setConversations([]);
+    setCurrentConversationId(null);
+    setCurrentConversation(null);
+    setConfig(null);
+  };
 
   // Load conversation details when selected
   useEffect(() => {
     if (currentConversationId) {
       loadConversation(currentConversationId);
+      loadConversationState(currentConversationId);
+    } else {
+      setCurrentConversation(null);
+      setConversationState(null);
     }
   }, [currentConversationId]);
+
+  const loadConfig = async () => {
+    try {
+      const cfg = await api.getConfig();
+      setConfig(cfg);
+      // Set defaults from config
+      if (cfg.defaults) {
+        setSelectedMode(cfg.defaults.mode || 'synthesized');
+        setSelectedCouncilType(cfg.defaults.council_type || 'general');
+      }
+    } catch (error) {
+      console.error('Failed to load config:', error);
+    }
+  };
 
   const loadConversations = async () => {
     try {
@@ -40,11 +91,21 @@ function App() {
     }
   };
 
+  const loadConversationState = async (id) => {
+    try {
+      const state = await api.getConversationState(id);
+      setConversationState(state);
+    } catch (error) {
+      console.error('Failed to load conversation state:', error);
+      setConversationState(null);
+    }
+  };
+
   const handleNewConversation = async () => {
     try {
-      const newConv = await api.createConversation();
+      const newConv = await api.createConversation(selectedCouncilType, selectedMode);
       setConversations([
-        { id: newConv.id, created_at: newConv.created_at, message_count: 0 },
+        { id: newConv.id, created_at: newConv.created_at, message_count: 0, title: 'New Conversation' },
         ...conversations,
       ]);
       setCurrentConversationId(newConv.id);
@@ -72,6 +133,7 @@ function App() {
       // Create a partial assistant message that will be updated progressively
       const assistantMessage = {
         role: 'assistant',
+        mode: selectedMode,
         stage1: null,
         stage2: null,
         stage3: null,
@@ -89,9 +151,20 @@ function App() {
         messages: [...prev.messages, assistantMessage],
       }));
 
-      // Send message with streaming
+      // Send message with streaming and options
+      const options = {
+        mode: selectedMode,
+        councilType: selectedCouncilType,
+        rolesEnabled,
+        enhancements: selectedEnhancements,
+      };
+
       await api.sendMessageStream(currentConversationId, content, (eventType, event) => {
         switch (eventType) {
+          case 'mode':
+            // Mode info received
+            break;
+
           case 'stage1_start':
             setCurrentConversation((prev) => {
               const messages = [...prev.messages];
@@ -156,8 +229,9 @@ function App() {
             break;
 
           case 'complete':
-            // Stream complete, reload conversations list
+            // Stream complete, reload conversations list and state
             loadConversations();
+            loadConversationState(currentConversationId);
             setIsLoading(false);
             break;
 
@@ -169,7 +243,7 @@ function App() {
           default:
             console.log('Unknown event type:', eventType);
         }
-      });
+      }, options);
     } catch (error) {
       console.error('Failed to send message:', error);
       // Remove optimistic messages on error
@@ -181,6 +255,77 @@ function App() {
     }
   };
 
+  const handleContinueDebate = async (userInput = null) => {
+    if (!currentConversationId) return;
+
+    setIsLoading(true);
+    try {
+      const result = await api.continueConversation(currentConversationId, userInput);
+
+      // Add the new round to the conversation
+      setCurrentConversation((prev) => ({
+        ...prev,
+        messages: [
+          ...prev.messages,
+          {
+            role: 'assistant',
+            mode: result.mode,
+            stage1: result.responses || result.stage1,
+            stage2: result.stage2,
+            stage3: result.stage3 || result.summary,
+            metadata: result.metadata,
+          },
+        ],
+      }));
+
+      // Refresh conversation state
+      await loadConversationState(currentConversationId);
+    } catch (error) {
+      console.error('Failed to continue debate:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleEndDebate = async () => {
+    if (!currentConversationId) return;
+
+    setIsLoading(true);
+    try {
+      const result = await api.endConversation(currentConversationId);
+
+      // Add the summary if available
+      if (result.summary) {
+        setCurrentConversation((prev) => ({
+          ...prev,
+          messages: [
+            ...prev.messages,
+            {
+              role: 'assistant',
+              mode: 'debate_summary',
+              stage3: result.summary,
+            },
+          ],
+        }));
+      }
+
+      // Clear conversation state
+      setConversationState(null);
+    } catch (error) {
+      console.error('Failed to end debate:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Check if we should show the mode selector (only before first message)
+  const showModeSelector = currentConversation && currentConversation.messages.length === 0;
+
+  // Show login screen if not authenticated
+  if (!authenticated) {
+    return <Login onLogin={handleLogin} />;
+  }
+
   return (
     <div className="app">
       <Sidebar
@@ -188,12 +333,43 @@ function App() {
         currentConversationId={currentConversationId}
         onSelectConversation={handleSelectConversation}
         onNewConversation={handleNewConversation}
+        onLogout={handleLogout}
       />
-      <ChatInterface
-        conversation={currentConversation}
-        onSendMessage={handleSendMessage}
-        isLoading={isLoading}
-      />
+      <main className="main-content">
+        {showModeSelector && config && (
+          <ModeSelector
+            modes={config.modes}
+            councilTypes={config.council_types}
+            roles={config.roles}
+            enhancements={config.enhancements}
+            selectedMode={selectedMode}
+            selectedCouncilType={selectedCouncilType}
+            rolesEnabled={rolesEnabled}
+            selectedEnhancements={selectedEnhancements}
+            onModeChange={setSelectedMode}
+            onCouncilTypeChange={setSelectedCouncilType}
+            onRolesToggle={setRolesEnabled}
+            onEnhancementsChange={setSelectedEnhancements}
+            disabled={isLoading}
+          />
+        )}
+
+        <ChatInterface
+          conversation={currentConversation}
+          onSendMessage={handleSendMessage}
+          isLoading={isLoading}
+          selectedMode={selectedMode}
+        />
+
+        {conversationState?.has_active_session && (
+          <DebateControls
+            conversationState={conversationState}
+            onContinue={handleContinueDebate}
+            onEnd={handleEndDebate}
+            isLoading={isLoading}
+          />
+        )}
+      </main>
     </div>
   );
 }

@@ -1,14 +1,14 @@
 .stage {
   margin: 24px 0;
   padding: 20px;
-  background: #fafafa;
+  background: var(--bg-secondary, #1a1a2e);
   border-radius: 8px;
-  border: 1px solid #e0e0e0;
+  border: 1px solid var(--border-color, #333);
 }
 
 .stage-title {
   margin: 0 0 16px 0;
-  color: #333;
+  color: var(--text-primary, #fff);
   font-size: 16px;
   font-weight: 600;
 }
@@ -22,44 +22,74 @@
 
 .tab {
   padding: 8px 16px;
-  background: #ffffff;
-  border: 1px solid #d0d0d0;
+  background: var(--bg-tertiary, #252538);
+  border: 1px solid var(--border-color, #333);
   border-radius: 6px 6px 0 0;
-  color: #666;
+  color: var(--text-secondary, #888);
   cursor: pointer;
   font-size: 14px;
   transition: all 0.2s;
 }
 
 .tab:hover {
-  background: #f0f0f0;
-  color: #333;
-  border-color: #4a90e2;
+  background: var(--bg-hover, #2f2f45);
+  color: var(--text-primary, #fff);
+  border-color: var(--accent-color, #6366f1);
 }
 
 .tab.active {
-  background: #ffffff;
-  color: #4a90e2;
-  border-color: #4a90e2;
-  border-bottom-color: #ffffff;
+  background: var(--bg-tertiary, #252538);
+  color: var(--accent-color, #6366f1);
+  border-color: var(--accent-color, #6366f1);
+  border-bottom-color: var(--bg-tertiary, #252538);
   font-weight: 600;
 }
 
 .tab-content {
-  background: #ffffff;
+  background: var(--bg-tertiary, #252538);
   padding: 16px;
   border-radius: 6px;
-  border: 1px solid #e0e0e0;
+  border: 1px solid var(--border-color, #333);
 }
 
 .model-name {
-  color: #888;
+  color: var(--accent-color, #6366f1);
   font-size: 12px;
   margin-bottom: 12px;
   font-family: monospace;
 }
 
 .response-text {
-  color: #333;
+  color: var(--text-primary, #fff);
   line-height: 1.6;
+}
+
+/* Role badge styling */
+.role-badge {
+  display: inline-block;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  margin-left: 8px;
+  font-weight: 500;
+}
+
+.role-badge.optimist {
+  background: rgba(16, 185, 129, 0.2);
+  color: #10b981;
+}
+
+.role-badge.skeptic {
+  background: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+}
+
+.role-badge.pragmatist {
+  background: rgba(59, 130, 246, 0.2);
+  color: #3b82f6;
+}
+
+.role-badge.innovator {
+  background: rgba(168, 85, 247, 0.2);
+  color: #a855f7;
 }
