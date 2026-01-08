@@ -1,8 +1,6 @@
 # Core dependencies for Vercel deployment
-# Using Pydantic v1 for Vercel Python runtime compatibility
-# Using httpx directly for Supabase REST API (no supabase package needed)
-fastapi==0.99.1
-uvicorn[standard]==0.23.2
+# Using Flask (no Pydantic dependency) for maximum compatibility
+flask==3.0.0
 python-dotenv==1.0.1
 httpx==0.27.0
-pydantic==1.10.14
+werkzeug==3.0.1
