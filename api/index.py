@@ -57,7 +57,7 @@ def add_cors_headers(response):
     if origin in CORS_ORIGINS or '*' in CORS_ORIGINS:
         response.headers['Access-Control-Allow-Origin'] = origin
     response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
-    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, PATCH, OPTIONS'
     response.headers['Access-Control-Allow-Credentials'] = 'true'
     return response
 
@@ -196,7 +196,8 @@ def list_models():
 @app.route('/api/conversations', methods=['GET'])
 @require_auth
 def list_conversations():
-    sessions = db.list_sessions()
+    include_archived = request.args.get('include_archived', 'false').lower() == 'true'
+    sessions = db.list_sessions(include_archived=include_archived)
     return jsonify([
         {
             "id": s["id"],
@@ -205,6 +206,7 @@ def list_conversations():
             "message_count": s.get("message_count", 0),
             "council_type": s.get("council_type"),
             "mode": s.get("council_mode"),
+            "is_archived": s.get("is_archived", False),
         }
         for s in sessions
     ])
@@ -253,6 +255,25 @@ def delete_conversation(conversation_id):
     if not deleted:
         return jsonify({"error": "Conversation not found"}), 404
     return jsonify({"status": "deleted", "id": conversation_id})
+
+
+@app.route('/api/conversations/<conversation_id>/archive', methods=['PATCH'])
+@require_auth
+def toggle_archive(conversation_id):
+    """Archive or unarchive a conversation."""
+    session = db.get_session(conversation_id)
+    if session is None:
+        return jsonify({"error": "Conversation not found"}), 404
+
+    data = request.get_json() or {}
+    is_archived = data.get('is_archived', True)
+
+    db.update_session(conversation_id, is_archived=is_archived)
+    return jsonify({
+        "id": conversation_id,
+        "is_archived": is_archived,
+        "status": "archived" if is_archived else "unarchived"
+    })
 
 
 # =============================================================================
