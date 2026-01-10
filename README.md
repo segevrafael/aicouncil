@@ -2,86 +2,181 @@
 
 ![llmcouncil](header.jpg)
 
-The idea of this repo is that instead of asking a question to your favorite LLM provider (e.g. OpenAI GPT 5.1, Google Gemini 3.0 Pro, Anthropic Claude Sonnet 4.5, xAI Grok 4, eg.c), you can group them into your "LLM Council". This repo is a simple, local web app that essentially looks like ChatGPT except it uses OpenRouter to send your query to multiple LLMs, it then asks them to review and rank each other's work, and finally a Chairman LLM produces the final response.
+A multi-LLM deliberation system where AI models collaborate, debate, and peer-review each other's responses to provide more thoughtful answers than any single model alone.
 
-In a bit more detail, here is what happens when you submit a query:
+## What is LLM Council?
 
-1. **Stage 1: First opinions**. The user query is given to all LLMs individually, and the responses are collected. The individual responses are shown in a "tab view", so that the user can inspect them all one by one.
-2. **Stage 2: Review**. Each individual LLM is given the responses of the other LLMs. Under the hood, the LLM identities are anonymized so that the LLM can't play favorites when judging their outputs. The LLM is asked to rank them in accuracy and insight.
-3. **Stage 3: Final response**. The designated Chairman of the LLM Council takes all of the model's responses and compiles them into a single final answer that is presented to the user.
+Instead of asking a question to a single AI, LLM Council sends your query to multiple leading models simultaneously. The models then review and rank each other's work (anonymously, to prevent favoritism), and a "Chairman" model synthesizes everything into a final response.
 
-## Vibe Code Alert
+This approach provides:
+- **Multiple perspectives** on complex questions
+- **Peer review** to catch errors and blind spots
+- **Transparency** into how different models think
+- **Higher quality** synthesis from collective intelligence
 
-This project was 99% vibe coded as a fun Saturday hack because I wanted to explore and evaluate a number of LLMs side by side in the process of [reading books together with LLMs](https://x.com/karpathy/status/1990577951671509438). It's nice and useful to see multiple responses side by side, and also the cross-opinions of all LLMs on each other's outputs. I'm not going to support it in any way, it's provided here as is for other people's inspiration and I don't intend to improve it. Code is ephemeral now and libraries are over, ask your LLM to change it in whatever way you like.
+## Council Modes
 
-## Setup
+LLM Council supports several deliberation modes:
 
-### 1. Install Dependencies
+| Mode | Description |
+|------|-------------|
+| **Synthesized** | Full 3-stage process: responses → peer review → chairman synthesis |
+| **Independent** | See all model responses side-by-side without synthesis |
+| **Debate** | Multi-round discussion where models respond to each other's arguments |
+| **Adversarial** | Three models answer while a Devil's Advocate challenges everything |
+| **Socratic** | The council asks YOU probing questions to clarify your thinking |
+| **Scenario Planning** | Models generate best/worst/likely scenarios and debate probabilities |
 
-The project uses [uv](https://docs.astral.sh/uv/) for project management.
+## The Three Stages
 
-**Backend:**
-```bash
-uv sync
-```
+For the synthesized mode, here's what happens when you submit a query:
 
-**Frontend:**
-```bash
-cd frontend
-npm install
-cd ..
-```
+1. **Stage 1: Individual Responses** — Your query goes to all council models independently. Each response is shown in tabs so you can inspect them.
 
-### 2. Configure API Key
+2. **Stage 2: Peer Review** — Each model reviews and ranks the others' responses. Identities are anonymized (Response A, B, C...) so models can't play favorites.
 
-Create a `.env` file in the project root:
+3. **Stage 3: Final Synthesis** — The Chairman model compiles all responses and rankings into a unified final answer.
 
-```bash
-OPENROUTER_API_KEY=sk-or-v1-...
-```
+## Council Types
 
-Get your API key at [openrouter.ai](https://openrouter.ai/). Make sure to purchase the credits you need, or sign up for automatic top up.
+Customize the council's expertise with domain-specific configurations:
 
-### 3. Configure Models (Optional)
+- **General Purpose** — Balanced advice for any topic
+- **Business Strategy** — Market analysis, competitive strategy, growth decisions
+- **Code Review** — Architecture, bugs, performance, security analysis
+- **Creative Writing** — Narrative, style, character development
+- **Personal Productivity** — Habits, systems, work-life balance
+- **Research Analysis** — Evidence evaluation, methodology, synthesis
 
-Edit `backend/config.py` to customize the council:
+## Specialist Roles
 
-```python
-COUNCIL_MODELS = [
-    "openai/gpt-5.1",
-    "google/gemini-3-pro-preview",
-    "anthropic/claude-sonnet-4.5",
-    "x-ai/grok-4",
-]
+Enable specialist roles to have each model take a different perspective:
 
-CHAIRMAN_MODEL = "google/gemini-3-pro-preview"
-```
-
-## Running the Application
-
-**Option 1: Use the start script**
-```bash
-./start.sh
-```
-
-**Option 2: Run manually**
-
-Terminal 1 (Backend):
-```bash
-uv run python -m backend.main
-```
-
-Terminal 2 (Frontend):
-```bash
-cd frontend
-npm run dev
-```
-
-Then open http://localhost:5173 in your browser.
+- **The Optimist** — Focuses on opportunities and upside potential
+- **The Skeptic** — Identifies risks and plays devil's advocate
+- **The Pragmatist** — Considers real-world constraints and feasibility
+- **The Innovator** — Suggests unconventional, creative solutions
 
 ## Tech Stack
 
 - **Backend:** FastAPI (Python 3.10+), async httpx, OpenRouter API
 - **Frontend:** React + Vite, react-markdown for rendering
-- **Storage:** JSON files in `data/conversations/`
-- **Package Management:** uv for Python, npm for JavaScript
+- **Database:** Supabase (PostgreSQL)
+- **Deployment:** Vercel (serverless)
+- **LLM Access:** OpenRouter (supports 100+ models)
+
+## Quick Start
+
+### Prerequisites
+
+- Python 3.10+
+- Node.js 18+
+- [OpenRouter](https://openrouter.ai) API key
+- [Supabase](https://supabase.com) account (for persistence)
+
+### 1. Clone and Install
+
+```bash
+git clone https://github.com/alexclowe/aicouncil.git
+cd aicouncil
+
+# Backend dependencies
+pip install -r requirements.txt
+
+# Frontend dependencies
+cd frontend && npm install && cd ..
+```
+
+### 2. Configure Environment
+
+Create a `.env` file in the project root:
+
+```bash
+# Required: OpenRouter API key
+OPENROUTER_API_KEY=sk-or-v1-your-key-here
+
+# Required: Supabase configuration
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+
+# Required for production: API password
+COUNCIL_API_PASSWORD=your-secure-password
+
+# Optional: CORS origins (comma-separated)
+CORS_ORIGINS=http://localhost:5173,https://your-app.vercel.app
+```
+
+### 3. Set Up Database
+
+Run the schema in your Supabase SQL Editor:
+
+```bash
+# The schema is in supabase/schema.sql
+```
+
+### 4. Run Locally
+
+**Option A: Use the start script**
+```bash
+./start.sh
+```
+
+**Option B: Run manually**
+
+Terminal 1 (Backend):
+```bash
+python -m backend.main
+```
+
+Terminal 2 (Frontend):
+```bash
+cd frontend && npm run dev
+```
+
+Open http://localhost:5173 in your browser.
+
+## Deployment
+
+See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed instructions on deploying to Vercel with Supabase.
+
+## Configuration
+
+### Models
+
+Edit `backend/config.py` to customize the council:
+
+```python
+DEFAULT_COUNCIL_MODELS = [
+    "openai/gpt-5.2",
+    "anthropic/claude-opus-4.5",
+    "google/gemini-3-pro-preview",
+    "x-ai/grok-4",
+]
+
+DEFAULT_CHAIRMAN_MODEL = "anthropic/claude-opus-4.5"
+```
+
+You can use any model available on [OpenRouter](https://openrouter.ai/models).
+
+## Architecture
+
+```
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│     Frontend    │────▶│     FastAPI     │────▶│   OpenRouter    │
+│   (React/Vite)  │     │    (Backend)    │     │   (LLM APIs)    │
+└─────────────────┘     └────────┬────────┘     └─────────────────┘
+                                 │
+                                 ▼
+                        ┌─────────────────┐
+                        │    Supabase     │
+                        │   (PostgreSQL)  │
+                        └─────────────────┘
+```
+
+## Credits
+
+Originally inspired by the idea of [reading books together with LLMs](https://x.com/karpathy/status/1990577951671509438) — seeing multiple AI perspectives side-by-side while exploring complex topics.
+
+## License
+
+MIT License - see [LICENSE](LICENSE) for details.

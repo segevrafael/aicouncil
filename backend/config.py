@@ -12,7 +12,7 @@ OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models"
 
-# Data directory for conversation storage (legacy JSON, will migrate to SQLite)
+# Legacy paths (no longer used - Supabase is primary storage)
 DATA_DIR = "data/conversations"
 DATABASE_PATH = "data/council.db"
 
@@ -29,9 +29,6 @@ DEFAULT_COUNCIL_MODELS = [
 
 DEFAULT_CHAIRMAN_MODEL = "anthropic/claude-opus-4.5"
 
-# Legacy aliases for backward compatibility
-COUNCIL_MODELS = DEFAULT_COUNCIL_MODELS
-CHAIRMAN_MODEL = DEFAULT_CHAIRMAN_MODEL
 
 # =============================================================================
 # COUNCIL MODES

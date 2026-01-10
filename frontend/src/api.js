@@ -297,12 +297,10 @@ export const api = {
     while (true) {
       const { done, value } = await reader.read();
       if (done) {
-        console.log('SSE stream ended');
         break;
       }
 
       const chunk = decoder.decode(value);
-      console.log('SSE chunk received:', chunk);
       const lines = chunk.split('\n');
 
       for (const line of lines) {
@@ -310,7 +308,6 @@ export const api = {
           const data = line.slice(6);
           try {
             const event = JSON.parse(data);
-            console.log('SSE parsed event:', event);
             onEvent(event.type, event);
           } catch (e) {
             console.error('Failed to parse SSE event:', e, 'Raw data:', data);
