@@ -1,6 +1,11 @@
 MIT License
 
-Copyright (c) 2026 Alex Lowe
+Copyright (c) 2025 Andrej Karpathy (original llm-council concept and implementation)
+Copyright (c) 2026 Alex Lowe (extended features and modifications)
+
+This project is a fork of https://github.com/karpathy/llm-council with significant
+additions including: multiple council modes, Supabase persistence, Vercel deployment,
+streaming responses, authentication, and extended UI features.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

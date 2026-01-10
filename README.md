@@ -1,5 +1,7 @@
 # LLM Council
 
+> **Fork Notice:** This project is an extended fork of [karpathy/llm-council](https://github.com/karpathy/llm-council), the original "vibe coded" weekend project by Andrej Karpathy. This version adds multiple council modes, cloud deployment, streaming, authentication, and other features.
+
 ![llmcouncil](header.jpg)
 
 A multi-LLM deliberation system where AI models collaborate, debate, and peer-review each other's responses to provide more thoughtful answers than any single model alone.
@@ -175,7 +177,17 @@ You can use any model available on [OpenRouter](https://openrouter.ai/models).
 
 ## Credits
 
-Originally inspired by the idea of [reading books together with LLMs](https://x.com/karpathy/status/1990577951671509438) — seeing multiple AI perspectives side-by-side while exploring complex topics.
+This project is forked from [karpathy/llm-council](https://github.com/karpathy/llm-council) by **Andrej Karpathy**, who created the original concept and implementation as a weekend "vibe coding" project. The original was inspired by [reading books together with LLMs](https://x.com/karpathy/status/1990577951671509438) — seeing multiple AI perspectives side-by-side while exploring complex topics.
+
+**This fork adds:**
+- Multiple council modes (Debate, Adversarial, Socratic, Scenario Planning)
+- Domain-specific council types and specialist roles
+- Supabase database for persistence
+- Vercel serverless deployment
+- Streaming responses with real-time UI updates
+- Password authentication
+- Conversation archiving
+- Mid-session message injection
 
 ## License
 
