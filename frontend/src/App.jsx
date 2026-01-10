@@ -5,12 +5,41 @@ import ModeSelector from './components/ModeSelector';
 import DebateControls from './components/DebateControls';
 import ConfirmDialog from './components/ConfirmDialog';
 import Login from './components/Login';
-import { api, isAuthenticated, clearAuthToken } from './api';
+import { api, setSession, clearSession, signOut } from './api';
+import { supabase, onAuthStateChange } from './supabase';
 import './App.css';
 
 function App() {
   // Auth state
-  const [authenticated, setAuthenticated] = useState(isAuthenticated());
+  const [authenticated, setAuthenticated] = useState(false);
+  const [authLoading, setAuthLoading] = useState(true);
+
+  // Check for existing session on mount and subscribe to auth changes
+  useEffect(() => {
+    // Check for existing session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) {
+        setSession(session);
+        setAuthenticated(true);
+      }
+      setAuthLoading(false);
+    });
+
+    // Subscribe to auth state changes (login, logout, token refresh)
+    const unsubscribe = onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_IN' && session) {
+        setSession(session);
+        setAuthenticated(true);
+      } else if (event === 'SIGNED_OUT') {
+        clearSession();
+        setAuthenticated(false);
+      } else if (event === 'TOKEN_REFRESHED' && session) {
+        setSession(session);
+      }
+    });
+
+    return unsubscribe;
+  }, []);
 
   // Conversations state
   const [conversations, setConversations] = useState([]);
@@ -41,12 +70,13 @@ function App() {
     }
   }, [authenticated]);
 
-  const handleLogin = () => {
+  const handleLogin = (session) => {
+    setSession(session);
     setAuthenticated(true);
   };
 
-  const handleLogout = () => {
-    clearAuthToken();
+  const handleLogout = async () => {
+    await signOut();
     setAuthenticated(false);
     setConversations([]);
     setCurrentConversationId(null);
@@ -549,6 +579,15 @@ function App() {
 
   // Check if we should show the mode selector (only before first message)
   const showModeSelector = currentConversation && currentConversation.messages.length === 0;
+
+  // Show loading while checking auth state
+  if (authLoading) {
+    return (
+      <div className="auth-loading">
+        <div className="auth-loading-spinner" />
+      </div>
+    );
+  }
 
   // Show login screen if not authenticated
   if (!authenticated) {

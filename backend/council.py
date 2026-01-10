@@ -3,8 +3,6 @@
 from typing import List, Dict, Any, Tuple, Optional
 from .openrouter import query_models_parallel, query_model
 from .config import (
-    COUNCIL_MODELS,
-    CHAIRMAN_MODEL,
     DEFAULT_COUNCIL_MODELS,
     DEFAULT_CHAIRMAN_MODEL,
     COUNCIL_TYPES,

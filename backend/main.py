@@ -248,13 +248,14 @@ async def refresh_models():
 # =============================================================================
 
 @app.get("/api/conversations")
-async def list_conversations(include_archived: bool = False, _: None = Depends(require_auth)):
+async def list_conversations(include_archived: bool = False, user: dict = Depends(require_auth)):
     """List all conversations (metadata only).
 
     Args:
         include_archived: If True, include archived conversations. Default is False.
     """
-    sessions = db.list_sessions(include_archived=include_archived)
+    user_id = user.get("user_id")
+    sessions = db.list_sessions(include_archived=include_archived, user_id=user_id)
     return [
         {
             "id": s["id"],
@@ -270,13 +271,15 @@ async def list_conversations(include_archived: bool = False, _: None = Depends(r
 
 
 @app.post("/api/conversations")
-async def create_conversation(request: CreateConversationRequest, _: None = Depends(require_auth)):
+async def create_conversation(request: CreateConversationRequest, user: dict = Depends(require_auth)):
     """Create a new conversation."""
     session_id = str(uuid.uuid4())
+    user_id = user.get("user_id")
     session = db.create_session(
         session_id,
         council_type=request.council_type,
         mode=request.mode,
+        user_id=user_id,
     )
     return {
         "id": session["id"],
@@ -1115,16 +1118,18 @@ async def list_presets(_: None = Depends(require_auth)):
 
 
 @app.post("/api/presets")
-async def create_preset(request: CreatePresetRequest, _: None = Depends(require_auth)):
+async def create_preset(request: CreatePresetRequest, user: dict = Depends(require_auth)):
     """Create a new model preset."""
     preset_id = str(uuid.uuid4())
+    user_id = user.get("user_id")
     try:
         preset = db.create_preset(
             preset_id,
             request.name,
             request.models,
             request.chairman_model,
-            request.description
+            request.description,
+            user_id=user_id
         )
         return preset
     except Exception as e:
@@ -1172,16 +1177,18 @@ class RecordOutcomeRequest(BaseModel):
 
 
 @app.post("/api/predictions")
-async def create_prediction(request: CreatePredictionRequest, _: None = Depends(require_auth)):
+async def create_prediction(request: CreatePredictionRequest, user: dict = Depends(require_auth)):
     """Log a prediction for later accuracy tracking."""
     prediction_id = str(uuid.uuid4())
+    user_id = user.get("user_id")
     prediction = db.add_prediction(
         prediction_id,
         request.session_id,
         request.prediction_text,
         request.model_name,
         request.message_id,
-        request.category
+        request.category,
+        user_id=user_id
     )
     return prediction
 
@@ -1213,9 +1220,10 @@ async def record_prediction_outcome(prediction_id: str, request: RecordOutcomeRe
 
 
 @app.get("/api/predictions/stats")
-async def get_prediction_stats(_: None = Depends(require_auth)):
+async def get_prediction_stats(user: dict = Depends(require_auth)):
     """Get prediction accuracy statistics by model and category."""
-    stats = db.get_prediction_stats()
+    user_id = user.get("user_id")
+    stats = db.get_prediction_stats(user_id=user_id)
     return stats
 
 

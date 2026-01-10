@@ -36,7 +36,8 @@ def create_session(
     models: Optional[List[str]] = None,
     chairman_model: Optional[str] = None,
     roles_enabled: bool = False,
-    enhancements: Optional[List[str]] = None
+    enhancements: Optional[List[str]] = None,
+    user_id: Optional[str] = None
 ) -> Dict[str, Any]:
     """Create a new session."""
     data = {
@@ -48,6 +49,8 @@ def create_session(
         "roles_enabled": roles_enabled,
         "enhancements": enhancements,
     }
+    if user_id:
+        data["user_id"] = user_id
 
     with httpx.Client() as client:
         response = client.post(
@@ -92,13 +95,14 @@ def get_session(session_id: str) -> Optional[Dict[str, Any]]:
         return session
 
 
-def list_sessions(limit: int = 50, offset: int = 0, include_archived: bool = False) -> List[Dict[str, Any]]:
+def list_sessions(limit: int = 50, offset: int = 0, include_archived: bool = False, user_id: Optional[str] = None) -> List[Dict[str, Any]]:
     """List all sessions with metadata.
 
     Args:
         limit: Maximum number of sessions to return
         offset: Number of sessions to skip
         include_archived: If False (default), exclude archived sessions
+        user_id: If provided, only return sessions for this user
     """
     with httpx.Client() as client:
         # Build params
@@ -107,6 +111,10 @@ def list_sessions(limit: int = 50, offset: int = 0, include_archived: bool = Fal
             "offset": str(offset),
             "limit": str(limit),
         }
+
+        # Filter by user_id if provided
+        if user_id:
+            params["user_id"] = f"eq.{user_id}"
 
         # Filter out archived sessions by default
         if not include_archived:
@@ -387,7 +395,8 @@ def create_preset(
     name: str,
     models: List[str],
     chairman_model: Optional[str] = None,
-    description: Optional[str] = None
+    description: Optional[str] = None,
+    user_id: Optional[str] = None
 ) -> Dict[str, Any]:
     """Create a new model preset."""
     data = {
@@ -397,6 +406,8 @@ def create_preset(
         "chairman_model": chairman_model,
         "description": description,
     }
+    if user_id:
+        data["user_id"] = user_id
 
     with httpx.Client() as client:
         response = client.post(
@@ -447,7 +458,8 @@ def add_prediction(
     prediction_text: str,
     model_name: Optional[str] = None,
     message_id: Optional[str] = None,
-    category: Optional[str] = None
+    category: Optional[str] = None,
+    user_id: Optional[str] = None
 ) -> Dict[str, Any]:
     """Log a prediction for later tracking."""
     data = {
@@ -458,6 +470,8 @@ def add_prediction(
         "model_name": model_name,
         "category": category,
     }
+    if user_id:
+        data["user_id"] = user_id
 
     with httpx.Client() as client:
         response = client.post(
@@ -509,14 +523,17 @@ def record_outcome(
     return get_prediction(prediction_id)
 
 
-def get_prediction_stats() -> Dict[str, Any]:
+def get_prediction_stats(user_id: Optional[str] = None) -> Dict[str, Any]:
     """Get statistics on prediction accuracy."""
     with httpx.Client() as client:
         # Get all predictions with outcomes
+        params = {"outcome": "not.is.null"}
+        if user_id:
+            params["user_id"] = f"eq.{user_id}"
         response = client.get(
             _rest_url("predictions"),
             headers=_get_headers(),
-            params={"outcome": "not.is.null"}
+            params=params
         )
         response.raise_for_status()
         predictions = response.json() or []

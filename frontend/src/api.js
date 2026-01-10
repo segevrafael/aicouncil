@@ -1,60 +1,54 @@
 /**
  * API client for the LLM Council backend.
- * Supports authentication via Bearer token.
+ * Supports authentication via Supabase JWT tokens.
  */
+
+import { supabase, getSessionToken } from './supabase';
 
 // API base URL - can be overridden in production
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
-// Store auth token in memory (can be enhanced with localStorage)
-let authToken = null;
+// Cache the current session
+let currentSession = null;
 
 /**
- * Set the authentication token for API requests.
- * @param {string} token - The password/token for authentication
+ * Set the current session (called after login).
+ * @param {Object} session - Supabase session object
  */
-export function setAuthToken(token) {
-  authToken = token;
-  // Persist to localStorage for convenience
-  if (token) {
-    localStorage.setItem('council_auth_token', token);
-  } else {
-    localStorage.removeItem('council_auth_token');
-  }
+export function setSession(session) {
+  currentSession = session;
 }
 
 /**
- * Get the current auth token (from memory or localStorage).
+ * Clear the current session.
  */
-export function getAuthToken() {
-  if (!authToken) {
-    authToken = localStorage.getItem('council_auth_token');
-  }
-  return authToken;
-}
-
-/**
- * Clear the auth token.
- */
-export function clearAuthToken() {
-  authToken = null;
-  localStorage.removeItem('council_auth_token');
+export function clearSession() {
+  currentSession = null;
 }
 
 /**
  * Check if user is authenticated.
  */
 export function isAuthenticated() {
-  return !!getAuthToken();
+  return !!currentSession;
+}
+
+/**
+ * Sign out the current user.
+ */
+export async function signOut() {
+  await supabase.auth.signOut();
+  currentSession = null;
 }
 
 /**
  * Get headers for authenticated requests.
  */
-function getHeaders(includeContentType = true) {
+async function getHeaders(includeContentType = true) {
   const headers = {};
 
-  const token = getAuthToken();
+  // Get fresh token from Supabase (handles token refresh automatically)
+  const token = await getSessionToken();
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
@@ -71,8 +65,8 @@ function getHeaders(includeContentType = true) {
  */
 async function handleResponse(response) {
   if (response.status === 401) {
-    clearAuthToken();
-    throw new Error('Authentication required. Please log in.');
+    clearSession();
+    throw new Error('Session expired. Please log in again.');
   }
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: 'Unknown error' }));
@@ -82,24 +76,6 @@ async function handleResponse(response) {
 }
 
 export const api = {
-  // =============================================================================
-  // AUTHENTICATION
-  // =============================================================================
-
-  /**
-   * Verify the password by making a test request.
-   * @param {string} password - The password to verify
-   * @returns {Promise<boolean>} - True if password is valid
-   */
-  async verifyPassword(password) {
-    const response = await fetch(`${API_BASE}/api/config`, {
-      headers: {
-        'Authorization': `Bearer ${password}`,
-      },
-    });
-    return response.ok;
-  },
-
   // =============================================================================
   // CONFIGURATION
   // =============================================================================
@@ -130,7 +106,7 @@ export const api = {
   async refreshModels() {
     const response = await fetch(`${API_BASE}/api/models/refresh`, {
       method: 'POST',
-      headers: getHeaders(),
+      headers: await getHeaders(),
     });
     return handleResponse(response);
   },
@@ -157,7 +133,7 @@ export const api = {
   async createConversation(councilType = 'general', mode = 'synthesized') {
     const response = await fetch(`${API_BASE}/api/conversations`, {
       method: 'POST',
-      headers: getHeaders(),
+      headers: await getHeaders(),
       body: JSON.stringify({ council_type: councilType, mode }),
     });
     return handleResponse(response);
@@ -200,7 +176,7 @@ export const api = {
       `${API_BASE}/api/conversations/${conversationId}/archive`,
       {
         method: 'PATCH',
-        headers: getHeaders(),
+        headers: await getHeaders(),
         body: JSON.stringify({ is_archived: isArchived }),
       }
     );
@@ -241,7 +217,7 @@ export const api = {
       `${API_BASE}/api/conversations/${conversationId}/message`,
       {
         method: 'POST',
-        headers: getHeaders(),
+        headers: await getHeaders(),
         body: JSON.stringify({
           content,
           mode: options.mode || 'synthesized',
@@ -269,7 +245,7 @@ export const api = {
       `${API_BASE}/api/conversations/${conversationId}/message/stream`,
       {
         method: 'POST',
-        headers: getHeaders(),
+        headers: await getHeaders(),
         body: JSON.stringify({
           content,
           mode: options.mode || 'synthesized',
@@ -283,8 +259,8 @@ export const api = {
     );
 
     if (response.status === 401) {
-      clearAuthToken();
-      throw new Error('Authentication required. Please log in.');
+      clearSession();
+      throw new Error('Session expired. Please log in again.');
     }
 
     if (!response.ok) {
@@ -331,7 +307,7 @@ export const api = {
       `${API_BASE}/api/conversations/${conversationId}/continue`,
       {
         method: 'POST',
-        headers: getHeaders(),
+        headers: await getHeaders(),
         body: JSON.stringify({ user_input: userInput }),
       }
     );
@@ -347,7 +323,7 @@ export const api = {
       `${API_BASE}/api/conversations/${conversationId}/end`,
       {
         method: 'POST',
-        headers: getHeaders(),
+        headers: await getHeaders(),
       }
     );
     return handleResponse(response);
@@ -373,7 +349,7 @@ export const api = {
   async createPreset(name, models, chairmanModel = null, description = null) {
     const response = await fetch(`${API_BASE}/api/presets`, {
       method: 'POST',
-      headers: getHeaders(),
+      headers: await getHeaders(),
       body: JSON.stringify({
         name,
         models,
@@ -422,7 +398,7 @@ export const api = {
   async createPrediction(sessionId, predictionText, modelName = null, category = null) {
     const response = await fetch(`${API_BASE}/api/predictions`, {
       method: 'POST',
-      headers: getHeaders(),
+      headers: await getHeaders(),
       body: JSON.stringify({
         session_id: sessionId,
         prediction_text: predictionText,
@@ -441,7 +417,7 @@ export const api = {
       `${API_BASE}/api/predictions/${predictionId}/outcome`,
       {
         method: 'PUT',
-        headers: getHeaders(),
+        headers: await getHeaders(),
         body: JSON.stringify({
           outcome,
           accuracy_score: accuracyScore,

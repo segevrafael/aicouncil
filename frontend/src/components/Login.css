@@ -91,3 +91,38 @@
   background: rgba(239, 68, 68, 0.1);
   border-radius: 6px;
 }
+
+.login-success {
+  color: #22c55e;
+  font-size: 14px;
+  padding: 8px;
+  background: rgba(34, 197, 94, 0.1);
+  border-radius: 6px;
+}
+
+.login-link {
+  background: none;
+  border: none;
+  color: var(--accent-color, #6366f1);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 0;
+  margin-top: 8px;
+}
+
+.login-link:hover {
+  text-decoration: underline;
+}
+
+.login-hint {
+  color: var(--text-secondary, #888);
+  font-size: 14px;
+  margin: 0;
+  text-align: left;
+}
+
+.login-footer {
+  margin-top: 24px;
+  color: var(--text-secondary, #666);
+  font-size: 12px;
+}
