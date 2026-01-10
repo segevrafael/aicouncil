@@ -96,3 +96,42 @@ body {
   border-left: 4px solid #ddd;
   color: #666;
 }
+
+/* Table styling for markdown */
+.markdown-content table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0;
+  font-size: 0.9em;
+  overflow-x: auto;
+  display: block;
+}
+
+.markdown-content table thead {
+  background: var(--bg-secondary, #1a1a2e);
+  color: var(--text-primary, #fff);
+}
+
+.markdown-content table th,
+.markdown-content table td {
+  padding: 10px 12px;
+  text-align: left;
+  border: 1px solid var(--border-color, #333);
+}
+
+.markdown-content table th {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.markdown-content table tbody tr {
+  background: var(--bg-primary, #0f0f1a);
+}
+
+.markdown-content table tbody tr:nth-child(even) {
+  background: var(--bg-tertiary, #252538);
+}
+
+.markdown-content table tbody tr:hover {
+  background: var(--bg-hover, #2f2f45);
+}

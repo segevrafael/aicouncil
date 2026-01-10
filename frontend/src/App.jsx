@@ -85,8 +85,10 @@ function App() {
   };
 
   const handleArchiveConversation = async (conversationId, isArchived) => {
+    console.log('handleArchiveConversation called:', { conversationId, isArchived });
     try {
-      await api.archiveConversation(conversationId, isArchived);
+      const result = await api.archiveConversation(conversationId, isArchived);
+      console.log('Archive API result:', result);
       // Refresh conversations list
       await loadConversations();
       // If we just archived the current conversation, clear the selection
