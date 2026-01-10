@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import './Sidebar.css';
 
 export default function Sidebar({
@@ -11,10 +10,9 @@ export default function Sidebar({
   showArchived,
   onToggleShowArchived,
 }) {
-  const [hoveredId, setHoveredId] = useState(null);
-
   const handleArchive = (e, convId, isArchived) => {
     e.stopPropagation(); // Prevent selecting the conversation
+    e.preventDefault();
     onArchiveConversation(convId, !isArchived);
   };
 
@@ -26,7 +24,7 @@ export default function Sidebar({
     <div className="sidebar">
       <div className="sidebar-header">
         <h1>AI Council</h1>
-        <button className="new-conversation-btn" onClick={onNewConversation}>
+        <button type="button" className="new-conversation-btn" onClick={onNewConversation}>
           + New
         </button>
       </div>
@@ -43,8 +41,6 @@ export default function Sidebar({
                   conv.id === currentConversationId ? 'active' : ''
                 }`}
                 onClick={() => onSelectConversation(conv.id)}
-                onMouseEnter={() => setHoveredId(conv.id)}
-                onMouseLeave={() => setHoveredId(null)}
               >
                 <div className="conversation-content">
                   <div className="conversation-title">
@@ -54,15 +50,14 @@ export default function Sidebar({
                     {conv.message_count} messages
                   </div>
                 </div>
-                {hoveredId === conv.id && (
-                  <button
-                    className="archive-btn"
-                    onClick={(e) => handleArchive(e, conv.id, conv.is_archived)}
-                    title="Archive conversation"
-                  >
-                    📦
-                  </button>
-                )}
+                <button
+                  type="button"
+                  className="archive-btn"
+                  onClick={(e) => handleArchive(e, conv.id, conv.is_archived)}
+                  title="Archive conversation"
+                >
+                  📦
+                </button>
               </div>
             ))}
 
@@ -70,6 +65,7 @@ export default function Sidebar({
             {archivedConversations.length > 0 && (
               <div className="archived-section">
                 <button
+                  type="button"
                   className="toggle-archived-btn"
                   onClick={onToggleShowArchived}
                 >
@@ -85,8 +81,6 @@ export default function Sidebar({
                           conv.id === currentConversationId ? 'active' : ''
                         }`}
                         onClick={() => onSelectConversation(conv.id)}
-                        onMouseEnter={() => setHoveredId(conv.id)}
-                        onMouseLeave={() => setHoveredId(null)}
                       >
                         <div className="conversation-content">
                           <div className="conversation-title">
@@ -96,15 +90,14 @@ export default function Sidebar({
                             {conv.message_count} messages
                           </div>
                         </div>
-                        {hoveredId === conv.id && (
-                          <button
-                            className="archive-btn unarchive"
-                            onClick={(e) => handleArchive(e, conv.id, conv.is_archived)}
-                            title="Unarchive conversation"
-                          >
-                            📤
-                          </button>
-                        )}
+                        <button
+                          type="button"
+                          className="archive-btn unarchive"
+                          onClick={(e) => handleArchive(e, conv.id, conv.is_archived)}
+                          title="Unarchive conversation"
+                        >
+                          📤
+                        </button>
                       </div>
                     ))}
                   </div>
@@ -116,7 +109,7 @@ export default function Sidebar({
       </div>
 
       <div className="sidebar-footer">
-        <button className="logout-btn" onClick={onLogout}>
+        <button type="button" className="logout-btn" onClick={onLogout}>
           Logout
         </button>
       </div>

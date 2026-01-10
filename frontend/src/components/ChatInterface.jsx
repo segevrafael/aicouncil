@@ -182,7 +182,7 @@ export default function ChatInterface({
         <div ref={messagesEndRef} />
       </div>
 
-      <form className="input-form" onSubmit={handleSubmit}>
+      <form className="input-form" onSubmit={handleSubmit} autoComplete="off">
         <textarea
           className="message-input"
           placeholder="Ask your question... (Shift+Enter for new line, Enter to send)"
@@ -191,6 +191,8 @@ export default function ChatInterface({
           onKeyDown={handleKeyDown}
           disabled={isLoading}
           rows={3}
+          autoComplete="off"
+          data-form-type="other"
         />
         <button
           type="submit"

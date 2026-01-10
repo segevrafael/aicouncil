@@ -104,7 +104,7 @@
   height: 28px;
   padding: 0;
   background: transparent;
-  border: 1px solid var(--border-color, #333);
+  border: 1px solid transparent;
   border-radius: 4px;
   cursor: pointer;
   font-size: 14px;
@@ -112,13 +112,19 @@
   align-items: center;
   justify-content: center;
   transition: all 0.2s;
-  opacity: 0.8;
+  opacity: 0;
+}
+
+/* Show button on conversation item hover */
+.conversation-item:hover .archive-btn {
+  opacity: 0.6;
+  border-color: var(--border-color, #333);
 }
 
 .archive-btn:hover {
   background: var(--bg-tertiary, #252538);
   border-color: var(--accent-color, #6366f1);
-  opacity: 1;
+  opacity: 1 !important;
 }
 
 .archive-btn.unarchive:hover {
