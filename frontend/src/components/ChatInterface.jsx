@@ -11,7 +11,10 @@ export default function ChatInterface({
   onSendMessage,
   isLoading,
   selectedMode,
+  conversationState,
 }) {
+  // Hide main input when Socratic mode is active (uses dedicated input in DebateControls)
+  const hideChatInput = conversationState?.has_active_session && conversationState?.mode === 'socratic';
   const [input, setInput] = useState('');
   const messagesEndRef = useRef(null);
 
@@ -183,26 +186,28 @@ export default function ChatInterface({
         <div ref={messagesEndRef} />
       </div>
 
-      <form className="input-form" onSubmit={handleSubmit} autoComplete="off">
-        <textarea
-          className="message-input"
-          placeholder="Ask your question... (Shift+Enter for new line, Enter to send)"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-          disabled={isLoading}
-          rows={3}
-          autoComplete="off"
-          data-form-type="other"
-        />
-        <button
-          type="submit"
-          className="send-button"
-          disabled={!input.trim() || isLoading}
-        >
-          Send
-        </button>
-      </form>
+      {!hideChatInput && (
+        <form className="input-form" onSubmit={handleSubmit} autoComplete="off">
+          <textarea
+            className="message-input"
+            placeholder="Ask your question... (Shift+Enter for new line, Enter to send)"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            disabled={isLoading}
+            rows={3}
+            autoComplete="off"
+            data-form-type="other"
+          />
+          <button
+            type="submit"
+            className="send-button"
+            disabled={!input.trim() || isLoading}
+          >
+            Send
+          </button>
+        </form>
+      )}
     </div>
   );
 }

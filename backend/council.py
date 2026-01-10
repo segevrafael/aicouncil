@@ -315,7 +315,8 @@ async def debate_round(
     round_number: int,
     models: Optional[List[str]] = None,
     council_type: str = "general",
-    roles_enabled: bool = False
+    roles_enabled: bool = False,
+    user_clarification: Optional[str] = None
 ) -> List[Dict[str, Any]]:
     """
     Execute a single round of debate.
@@ -330,6 +331,7 @@ async def debate_round(
         models: List of model IDs
         council_type: Council type for prompts
         roles_enabled: Whether roles are enabled
+        user_clarification: Optional user input to inject as additional context
 
     Returns:
         List of response dicts for this round
@@ -350,18 +352,29 @@ async def debate_round(
         for result in previous_responses
     ])
 
+    # Build user clarification section if provided
+    clarification_section = ""
+    if user_clarification:
+        clarification_section = f"""
+USER CLARIFICATION: The user has provided additional input during the debate:
+"{user_clarification}"
+Please take this clarification into account in your response.
+
+"""
+
     debate_prompt = f"""This is round {round_number} of a council debate on the following question:
 
 Original Question: {user_query}
 
 Previous round's responses:
 {previous_text}
-
+{clarification_section}
 Now it's your turn to respond. You should:
 1. Acknowledge points from other council members that you agree with
 2. Respectfully challenge or refine points you disagree with
 3. Add any new insights or perspectives
 4. Work toward building consensus while maintaining intellectual honesty
+{f"5. Address the user's clarification: {user_clarification}" if user_clarification else ""}
 
 Your response for round {round_number}:"""
 

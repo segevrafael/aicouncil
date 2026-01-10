@@ -13,7 +13,6 @@ export default function Sidebar({
   const handleArchive = (e, convId, isArchived) => {
     e.stopPropagation(); // Prevent selecting the conversation
     e.preventDefault();
-    console.log('Archive button clicked:', { convId, currentIsArchived: isArchived, newIsArchived: !isArchived });
     if (onArchiveConversation) {
       onArchiveConversation(convId, !isArchived);
     } else {

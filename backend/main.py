@@ -890,6 +890,9 @@ async def continue_conversation(conversation_id: str, request: ContinueDebateReq
         current_round = state.get("current_round", 1)
         previous_responses = rounds[-1] if rounds else []
 
+        # Get optional user clarification from request
+        user_clarification = request.user_input if request and request.user_input else None
+
         next_round = current_round + 1
         round_responses = await debate_round(
             state["query"],
@@ -897,7 +900,8 @@ async def continue_conversation(conversation_id: str, request: ContinueDebateReq
             next_round,
             models,
             state.get("council_type", "general"),
-            state.get("roles_enabled", False)
+            state.get("roles_enabled", False),
+            user_clarification=user_clarification
         )
 
         # Update state in database

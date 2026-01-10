@@ -3,6 +3,7 @@ import Sidebar from './components/Sidebar';
 import ChatInterface from './components/ChatInterface';
 import ModeSelector from './components/ModeSelector';
 import DebateControls from './components/DebateControls';
+import ConfirmDialog from './components/ConfirmDialog';
 import Login from './components/Login';
 import { api, isAuthenticated, clearAuthToken } from './api';
 import './App.css';
@@ -18,6 +19,10 @@ function App() {
   const [conversationState, setConversationState] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
+
+  // Confirmation dialog state for mid-session messages
+  const [pendingMessage, setPendingMessage] = useState(null);
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
 
   // Config state
   const [config, setConfig] = useState(null);
@@ -85,10 +90,8 @@ function App() {
   };
 
   const handleArchiveConversation = async (conversationId, isArchived) => {
-    console.log('handleArchiveConversation called:', { conversationId, isArchived });
     try {
-      const result = await api.archiveConversation(conversationId, isArchived);
-      console.log('Archive API result:', result);
+      await api.archiveConversation(conversationId, isArchived);
       // Refresh conversations list
       await loadConversations();
       // If we just archived the current conversation, clear the selection
@@ -171,6 +174,19 @@ function App() {
   const handleSendMessage = async (content) => {
     if (!currentConversationId) return;
 
+    // Check if there's an active multi-round session (debate or socratic)
+    if (conversationState?.has_active_session) {
+      // Store the pending message and show confirmation dialog
+      setPendingMessage(content);
+      setShowConfirmDialog(true);
+      return;
+    }
+
+    // No active session, proceed normally
+    await sendMessageDirectly(content);
+  };
+
+  const sendMessageDirectly = async (content) => {
     setIsLoading(true);
     try {
       // Optimistically add user message to UI
@@ -501,6 +517,41 @@ function App() {
     }
   };
 
+  // Handle confirmation dialog selection
+  const handleConfirmDialogSelect = async (choice) => {
+    setShowConfirmDialog(false);
+
+    if (!pendingMessage) return;
+
+    if (choice === 'add_to_session') {
+      // Add the user's message to the conversation so they can see what they typed
+      const userMessage = { role: 'user', content: pendingMessage, isDebateClarification: true };
+      setCurrentConversation((prev) => ({
+        ...prev,
+        messages: [...prev.messages, userMessage],
+      }));
+      // Continue the debate/socratic session with the user's input as context
+      await handleContinueDebate(pendingMessage);
+    } else if (choice === 'start_new') {
+      // End current session silently and start fresh
+      try {
+        await api.endConversation(currentConversationId);
+        setConversationState(null);
+      } catch (error) {
+        console.error('Failed to end session:', error);
+      }
+      // Now send the new message
+      await sendMessageDirectly(pendingMessage);
+    }
+
+    setPendingMessage(null);
+  };
+
+  const handleConfirmDialogCancel = () => {
+    setShowConfirmDialog(false);
+    setPendingMessage(null);
+  };
+
   // Check if we should show the mode selector (only before first message)
   const showModeSelector = currentConversation && currentConversation.messages.length === 0;
 
@@ -545,6 +596,7 @@ function App() {
           onSendMessage={handleSendMessage}
           isLoading={isLoading}
           selectedMode={selectedMode}
+          conversationState={conversationState}
         />
 
         {conversationState?.has_active_session && (
@@ -556,6 +608,26 @@ function App() {
           />
         )}
       </main>
+
+      <ConfirmDialog
+        isOpen={showConfirmDialog}
+        title={`Active ${conversationState?.mode === 'debate' ? 'Debate' : 'Session'} in Progress`}
+        message={`You have an active ${conversationState?.mode || 'multi-round'} session (Round ${conversationState?.current_round || 1}). What would you like to do with your message?`}
+        options={[
+          {
+            label: `Add to ${conversationState?.mode === 'debate' ? 'Debate' : 'Session'}`,
+            value: 'add_to_session',
+            variant: 'primary',
+          },
+          {
+            label: 'Start New Conversation',
+            value: 'start_new',
+            variant: 'warning',
+          },
+        ]}
+        onSelect={handleConfirmDialogSelect}
+        onCancel={handleConfirmDialogCancel}
+      />
     </div>
   );
 }
