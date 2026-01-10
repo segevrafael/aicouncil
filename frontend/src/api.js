@@ -141,9 +141,11 @@ export const api = {
 
   /**
    * List all conversations.
+   * @param {boolean} includeArchived - Include archived conversations (default: false)
    */
-  async listConversations() {
-    const response = await fetch(`${API_BASE}/api/conversations`, {
+  async listConversations(includeArchived = false) {
+    const params = includeArchived ? '?include_archived=true' : '';
+    const response = await fetch(`${API_BASE}/api/conversations${params}`, {
       headers: getHeaders(false),
     });
     return handleResponse(response);
@@ -183,6 +185,23 @@ export const api = {
       {
         method: 'DELETE',
         headers: getHeaders(false),
+      }
+    );
+    return handleResponse(response);
+  },
+
+  /**
+   * Archive or unarchive a conversation.
+   * @param {string} conversationId - The conversation ID
+   * @param {boolean} isArchived - True to archive, false to unarchive
+   */
+  async archiveConversation(conversationId, isArchived) {
+    const response = await fetch(
+      `${API_BASE}/api/conversations/${conversationId}/archive`,
+      {
+        method: 'PATCH',
+        headers: getHeaders(),
+        body: JSON.stringify({ is_archived: isArchived }),
       }
     );
     return handleResponse(response);

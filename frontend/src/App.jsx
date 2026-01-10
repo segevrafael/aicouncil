@@ -17,6 +17,7 @@ function App() {
   const [currentConversation, setCurrentConversation] = useState(null);
   const [conversationState, setConversationState] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
 
   // Config state
   const [config, setConfig] = useState(null);
@@ -73,13 +74,32 @@ function App() {
     }
   };
 
-  const loadConversations = async () => {
+  const loadConversations = async (includeArchived = true) => {
     try {
-      const convs = await api.listConversations();
+      // Always load all conversations (including archived) so we can show the archived count
+      const convs = await api.listConversations(includeArchived);
       setConversations(convs);
     } catch (error) {
       console.error('Failed to load conversations:', error);
     }
+  };
+
+  const handleArchiveConversation = async (conversationId, isArchived) => {
+    try {
+      await api.archiveConversation(conversationId, isArchived);
+      // Refresh conversations list
+      await loadConversations();
+      // If we just archived the current conversation, clear the selection
+      if (isArchived && conversationId === currentConversationId) {
+        setCurrentConversationId(null);
+      }
+    } catch (error) {
+      console.error('Failed to archive conversation:', error);
+    }
+  };
+
+  const handleToggleShowArchived = () => {
+    setShowArchived(!showArchived);
   };
 
   const loadConversation = async (id) => {
@@ -494,7 +514,10 @@ function App() {
         currentConversationId={currentConversationId}
         onSelectConversation={handleSelectConversation}
         onNewConversation={handleNewConversation}
+        onArchiveConversation={handleArchiveConversation}
         onLogout={handleLogout}
+        showArchived={showArchived}
+        onToggleShowArchived={handleToggleShowArchived}
       />
       <main className="main-content">
         {showModeSelector && config && (

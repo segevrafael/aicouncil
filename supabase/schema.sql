@@ -15,9 +15,21 @@ CREATE TABLE IF NOT EXISTS sessions (
     roles_enabled BOOLEAN DEFAULT FALSE,
     enhancements JSONB,  -- JSON array
     tags JSONB,  -- JSON array
+    is_archived BOOLEAN DEFAULT FALSE,  -- Archive flag to hide old conversations
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Migration: Add is_archived column if it doesn't exist (for existing databases)
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'sessions' AND column_name = 'is_archived'
+    ) THEN
+        ALTER TABLE sessions ADD COLUMN is_archived BOOLEAN DEFAULT FALSE;
+    END IF;
+END $$;
 
 -- Messages table
 CREATE TABLE IF NOT EXISTS messages (

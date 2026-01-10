@@ -92,18 +92,31 @@ def get_session(session_id: str) -> Optional[Dict[str, Any]]:
         return session
 
 
-def list_sessions(limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
-    """List all sessions with metadata."""
+def list_sessions(limit: int = 50, offset: int = 0, include_archived: bool = False) -> List[Dict[str, Any]]:
+    """List all sessions with metadata.
+
+    Args:
+        limit: Maximum number of sessions to return
+        offset: Number of sessions to skip
+        include_archived: If False (default), exclude archived sessions
+    """
     with httpx.Client() as client:
+        # Build params
+        params = {
+            "order": "updated_at.desc",
+            "offset": str(offset),
+            "limit": str(limit),
+        }
+
+        # Filter out archived sessions by default
+        if not include_archived:
+            params["or"] = "(is_archived.is.null,is_archived.eq.false)"
+
         # Get sessions
         response = client.get(
             _rest_url("sessions"),
             headers=_get_headers(),
-            params={
-                "order": "updated_at.desc",
-                "offset": str(offset),
-                "limit": str(limit),
-            }
+            params=params
         )
         response.raise_for_status()
         sessions = response.json() or []
@@ -134,7 +147,7 @@ def list_sessions(limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
 def update_session(session_id: str, **kwargs) -> Optional[Dict[str, Any]]:
     """Update session fields."""
     allowed_fields = ["title", "council_type", "council_mode", "models", "chairman_model",
-                      "roles_enabled", "enhancements", "tags"]
+                      "roles_enabled", "enhancements", "tags", "is_archived"]
 
     updates = {k: v for k, v in kwargs.items() if k in allowed_fields}
 

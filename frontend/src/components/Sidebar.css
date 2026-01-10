@@ -56,6 +56,9 @@
   cursor: pointer;
   transition: background 0.2s;
   border: 1px solid transparent;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .conversation-item:hover {
@@ -65,6 +68,19 @@
 .conversation-item.active {
   background: var(--bg-tertiary, #252538);
   border: 1px solid var(--accent-color, #6366f1);
+}
+
+.conversation-item.archived {
+  opacity: 0.7;
+}
+
+.conversation-item.archived .conversation-title {
+  color: var(--text-secondary, #888);
+}
+
+.conversation-content {
+  flex: 1;
+  min-width: 0;
 }
 
 .conversation-title {
@@ -79,6 +95,61 @@
 .conversation-meta {
   color: var(--text-secondary, #888);
   font-size: 12px;
+}
+
+/* Archive button */
+.archive-btn {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid var(--border-color, #333);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  opacity: 0.8;
+}
+
+.archive-btn:hover {
+  background: var(--bg-tertiary, #252538);
+  border-color: var(--accent-color, #6366f1);
+  opacity: 1;
+}
+
+.archive-btn.unarchive:hover {
+  border-color: #10b981;
+}
+
+/* Archived section */
+.archived-section {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-color, #333);
+}
+
+.toggle-archived-btn {
+  width: 100%;
+  padding: 8px 12px;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary, #888);
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+  transition: color 0.2s;
+}
+
+.toggle-archived-btn:hover {
+  color: var(--text-primary, #fff);
+}
+
+.archived-list {
+  margin-top: 4px;
 }
 
 .sidebar-footer {

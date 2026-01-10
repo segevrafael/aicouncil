@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import './Sidebar.css';
 
 export default function Sidebar({
@@ -5,8 +6,22 @@ export default function Sidebar({
   currentConversationId,
   onSelectConversation,
   onNewConversation,
+  onArchiveConversation,
   onLogout,
+  showArchived,
+  onToggleShowArchived,
 }) {
+  const [hoveredId, setHoveredId] = useState(null);
+
+  const handleArchive = (e, convId, isArchived) => {
+    e.stopPropagation(); // Prevent selecting the conversation
+    onArchiveConversation(convId, !isArchived);
+  };
+
+  // Separate archived and active conversations
+  const activeConversations = conversations.filter((c) => !c.is_archived);
+  const archivedConversations = conversations.filter((c) => c.is_archived);
+
   return (
     <div className="sidebar">
       <div className="sidebar-header">
@@ -17,25 +32,86 @@ export default function Sidebar({
       </div>
 
       <div className="conversation-list">
-        {conversations.length === 0 ? (
+        {activeConversations.length === 0 && !showArchived ? (
           <div className="no-conversations">No conversations yet</div>
         ) : (
-          conversations.map((conv) => (
-            <div
-              key={conv.id}
-              className={`conversation-item ${
-                conv.id === currentConversationId ? 'active' : ''
-              }`}
-              onClick={() => onSelectConversation(conv.id)}
-            >
-              <div className="conversation-title">
-                {conv.title || 'New Conversation'}
+          <>
+            {activeConversations.map((conv) => (
+              <div
+                key={conv.id}
+                className={`conversation-item ${
+                  conv.id === currentConversationId ? 'active' : ''
+                }`}
+                onClick={() => onSelectConversation(conv.id)}
+                onMouseEnter={() => setHoveredId(conv.id)}
+                onMouseLeave={() => setHoveredId(null)}
+              >
+                <div className="conversation-content">
+                  <div className="conversation-title">
+                    {conv.title || 'New Conversation'}
+                  </div>
+                  <div className="conversation-meta">
+                    {conv.message_count} messages
+                  </div>
+                </div>
+                {hoveredId === conv.id && (
+                  <button
+                    className="archive-btn"
+                    onClick={(e) => handleArchive(e, conv.id, conv.is_archived)}
+                    title="Archive conversation"
+                  >
+                    📦
+                  </button>
+                )}
               </div>
-              <div className="conversation-meta">
-                {conv.message_count} messages
+            ))}
+
+            {/* Archived section */}
+            {archivedConversations.length > 0 && (
+              <div className="archived-section">
+                <button
+                  className="toggle-archived-btn"
+                  onClick={onToggleShowArchived}
+                >
+                  {showArchived ? '▼' : '▶'} Archived ({archivedConversations.length})
+                </button>
+
+                {showArchived && (
+                  <div className="archived-list">
+                    {archivedConversations.map((conv) => (
+                      <div
+                        key={conv.id}
+                        className={`conversation-item archived ${
+                          conv.id === currentConversationId ? 'active' : ''
+                        }`}
+                        onClick={() => onSelectConversation(conv.id)}
+                        onMouseEnter={() => setHoveredId(conv.id)}
+                        onMouseLeave={() => setHoveredId(null)}
+                      >
+                        <div className="conversation-content">
+                          <div className="conversation-title">
+                            {conv.title || 'New Conversation'}
+                          </div>
+                          <div className="conversation-meta">
+                            {conv.message_count} messages
+                          </div>
+                        </div>
+                        {hoveredId === conv.id && (
+                          <button
+                            className="archive-btn unarchive"
+                            onClick={(e) => handleArchive(e, conv.id, conv.is_archived)}
+                            title="Unarchive conversation"
+                          >
+                            📤
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-            </div>
-          ))
+            )}
+          </>
         )}
       </div>
 

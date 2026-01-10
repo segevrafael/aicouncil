@@ -249,9 +249,13 @@ async def refresh_models():
 # =============================================================================
 
 @app.get("/api/conversations")
-async def list_conversations(_: None = Depends(require_auth)):
-    """List all conversations (metadata only)."""
-    sessions = db.list_sessions()
+async def list_conversations(include_archived: bool = False, _: None = Depends(require_auth)):
+    """List all conversations (metadata only).
+
+    Args:
+        include_archived: If True, include archived conversations. Default is False.
+    """
+    sessions = db.list_sessions(include_archived=include_archived)
     return [
         {
             "id": s["id"],
@@ -260,6 +264,7 @@ async def list_conversations(_: None = Depends(require_auth)):
             "message_count": s.get("message_count", 0),
             "council_type": s.get("council_type"),
             "mode": s.get("council_mode"),
+            "is_archived": s.get("is_archived", False),
         }
         for s in sessions
     ]
@@ -307,6 +312,26 @@ async def delete_conversation(conversation_id: str, _: None = Depends(require_au
     if not deleted:
         raise HTTPException(status_code=404, detail="Conversation not found")
     return {"status": "deleted", "id": conversation_id}
+
+
+class ArchiveRequest(BaseModel):
+    """Request to archive or unarchive a conversation."""
+    is_archived: bool
+
+
+@app.patch("/api/conversations/{conversation_id}/archive")
+async def toggle_archive(conversation_id: str, request: ArchiveRequest, _: None = Depends(require_auth)):
+    """Archive or unarchive a conversation."""
+    session = db.get_session(conversation_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    db.update_session(conversation_id, is_archived=request.is_archived)
+    return {
+        "id": conversation_id,
+        "is_archived": request.is_archived,
+        "status": "archived" if request.is_archived else "unarchived"
+    }
 
 
 # =============================================================================
@@ -618,7 +643,13 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest,
             if request.mode == "independent":
                 # Independent mode: just collect responses
                 yield f"data: {json.dumps({'type': 'stage1_start'})}\n\n"
-                stage1_results = await stage1_collect_responses(request.content)
+                stage1_results = await stage1_collect_responses(
+                    request.content,
+                    request.models,
+                    request.council_type,
+                    request.roles_enabled,
+                    request.enhancements
+                )
                 yield f"data: {json.dumps({'type': 'stage1_complete', 'data': stage1_results})}\n\n"
 
                 # Save and complete
@@ -627,10 +658,160 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest,
                     stage_data={"stage1": stage1_results, "mode": "independent"}
                 )
 
-            else:
-                # Full 3-stage process (synthesized and fallback for unimplemented modes)
+            elif request.mode == "debate":
+                # Debate mode: Start round 1, store state for continuation
+                yield f"data: {json.dumps({'type': 'debate_round_start', 'round': 1})}\n\n"
+                round1_responses = await debate_round(
+                    request.content,
+                    [],  # No previous responses for round 1
+                    1,
+                    request.models,
+                    request.council_type,
+                    request.roles_enabled
+                )
+                yield f"data: {json.dumps({'type': 'debate_round_complete', 'round': 1, 'data': round1_responses})}\n\n"
+
+                # Store debate state in database for serverless compatibility
+                db.save_conversation_state(
+                    session_id=conversation_id,
+                    mode="debate",
+                    query=request.content,
+                    rounds=[round1_responses],
+                    current_round=1,
+                    models=request.models or DEFAULT_COUNCIL_MODELS,
+                    chairman_model=request.chairman_model or DEFAULT_CHAIRMAN_MODEL,
+                    council_type=request.council_type,
+                    roles_enabled=request.roles_enabled,
+                )
+
+                db.add_message(
+                    conversation_id, "assistant",
+                    stage_data={"round": 1, "responses": round1_responses, "mode": "debate"},
+                    debate_round=1
+                )
+                yield f"data: {json.dumps({'type': 'debate_can_continue', 'can_continue': True})}\n\n"
+
+            elif request.mode == "adversarial":
+                # Adversarial mode: 3 models answer, then devil's advocate critiques
+                models = request.models or DEFAULT_COUNCIL_MODELS
+                responders = models[:3]
+                devils_advocate = models[3] if len(models) > 3 else models[0]
+
+                # Get initial responses from 3 models
                 yield f"data: {json.dumps({'type': 'stage1_start'})}\n\n"
-                stage1_results = await stage1_collect_responses(request.content)
+                initial_responses = await stage1_collect_responses(
+                    request.content,
+                    responders,
+                    request.council_type,
+                    request.roles_enabled,
+                    request.enhancements
+                )
+                yield f"data: {json.dumps({'type': 'stage1_complete', 'data': initial_responses})}\n\n"
+
+                # Build context for devil's advocate
+                responses_text = "\n\n".join([
+                    f"[{r.get('model_name', r['model'])}]: {r['response']}"
+                    for r in initial_responses
+                ])
+
+                devils_advocate_prompt = f"""The user asked: {request.content}
+
+Three AI models have provided the following responses:
+
+{responses_text}
+
+You are the Devil's Advocate. Your job is to:
+1. Challenge the assumptions made by the other models
+2. Point out flaws, risks, or overlooked considerations in each response
+3. Present counterarguments or alternative perspectives
+4. Be constructively critical - aim to strengthen the final answer by stress-testing these responses
+
+Provide your critique:"""
+
+                yield f"data: {json.dumps({'type': 'critique_start'})}\n\n"
+                from .openrouter import query_model
+                critique_response = await query_model(devils_advocate, [{"role": "user", "content": devils_advocate_prompt}])
+
+                critique = {
+                    "model": devils_advocate,
+                    "model_name": f"{devils_advocate.split('/')[-1]} (Devil's Advocate)",
+                    "response": critique_response.get('content', '') if critique_response else "Error generating critique",
+                    "role": "devils_advocate"
+                }
+                yield f"data: {json.dumps({'type': 'critique_complete', 'data': critique})}\n\n"
+
+                db.add_message(
+                    conversation_id, "assistant",
+                    stage_data={
+                        "initial_responses": initial_responses,
+                        "devils_advocate": critique,
+                        "mode": "adversarial"
+                    }
+                )
+
+            elif request.mode == "socratic":
+                # Socratic mode: Council asks probing questions
+                yield f"data: {json.dumps({'type': 'questions_start'})}\n\n"
+                questions = await socratic_questions(
+                    request.content,
+                    request.models,
+                    request.council_type,
+                    request.roles_enabled
+                )
+                yield f"data: {json.dumps({'type': 'questions_complete', 'data': questions})}\n\n"
+
+                # Store state in database for serverless compatibility
+                db.save_conversation_state(
+                    session_id=conversation_id,
+                    mode="socratic",
+                    query=request.content,
+                    rounds=[questions],  # Store questions as first "round"
+                    current_round=1,
+                    models=request.models or DEFAULT_COUNCIL_MODELS,
+                    chairman_model=request.chairman_model or DEFAULT_CHAIRMAN_MODEL,
+                    council_type=request.council_type,
+                    roles_enabled=request.roles_enabled,
+                )
+
+                db.add_message(
+                    conversation_id, "assistant",
+                    stage_data={"questions": questions, "mode": "socratic"}
+                )
+
+            elif request.mode == "scenario":
+                # Scenario planning mode
+                yield f"data: {json.dumps({'type': 'scenarios_start'})}\n\n"
+                result = await scenario_planning(
+                    request.content,
+                    request.models,
+                    request.chairman_model,
+                    request.council_type
+                )
+                yield f"data: {json.dumps({'type': 'scenarios_complete', 'data': result['scenarios']})}\n\n"
+
+                yield f"data: {json.dumps({'type': 'stage3_start'})}\n\n"
+                yield f"data: {json.dumps({'type': 'stage3_complete', 'data': result['synthesis']})}\n\n"
+
+                db.add_message(
+                    conversation_id, "assistant",
+                    content=result["synthesis"].get("synthesis", ""),
+                    stage_data={
+                        "scenarios": result["scenarios"],
+                        "synthesis": result["synthesis"],
+                        "mode": "scenario"
+                    }
+                )
+
+            else:
+                # Full 3-stage process (synthesized mode and fallback)
+                yield f"data: {json.dumps({'type': 'stage1_start'})}\n\n"
+                stage1_results = await stage1_collect_responses(
+                    request.content,
+                    request.models,
+                    request.council_type,
+                    request.roles_enabled,
+                    request.enhancements
+                )
                 yield f"data: {json.dumps({'type': 'stage1_complete', 'data': stage1_results})}\n\n"
 
                 yield f"data: {json.dumps({'type': 'stage2_start'})}\n\n"
