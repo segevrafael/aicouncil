@@ -557,6 +557,104 @@ Your response for round {round_number}:"""
     return results
 
 
+async def debate_round_streaming(
+    user_query: str,
+    previous_responses: List[Dict[str, Any]],
+    round_number: int,
+    models: Optional[List[str]] = None,
+    council_type: str = "general",
+    roles_enabled: bool = False,
+    user_clarification: Optional[str] = None
+):
+    """
+    Streaming version of debate_round - yields results as each model completes.
+    """
+    models = models or DEFAULT_COUNCIL_MODELS
+
+    if round_number == 1:
+        # First round: use streaming stage1
+        async for result in stage1_collect_responses_streaming(
+            user_query, models, council_type, roles_enabled
+        ):
+            result["round"] = round_number
+            yield result
+        return
+
+    # Build context from previous responses
+    previous_text = "\n\n".join([
+        f"[{result.get('model_name', result['model'])}"
+        + (f" - {result.get('role_name', '')}" if result.get('role_name') else "")
+        + f"]:\n{result['response']}"
+        for result in previous_responses
+    ])
+
+    # Build user clarification section if provided
+    clarification_section = ""
+    if user_clarification:
+        clarification_section = f"""
+USER CLARIFICATION: The user has provided additional input during the debate:
+"{user_clarification}"
+Please take this clarification into account in your response.
+
+"""
+
+    debate_prompt = f"""This is round {round_number} of a council debate on the following question:
+
+Original Question: {user_query}
+
+Previous round's responses:
+{previous_text}
+{clarification_section}
+Now it's your turn to respond. You should:
+1. Acknowledge points from other council members that you agree with
+2. Respectfully challenge or refine points you disagree with
+3. Add any new insights or perspectives
+4. Work toward building consensus while maintaining intellectual honesty
+{f"5. Address the user's clarification: {user_clarification}" if user_clarification else ""}
+
+Your response for round {round_number}:"""
+
+    model_messages = {}
+    model_roles = {}
+
+    for model in models:
+        role = get_role_for_model(model, roles_enabled)
+        model_roles[model] = role
+        system_prompt = build_system_prompt(council_type, role)
+
+        model_messages[model] = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": debate_prompt}
+        ]
+
+    async for model, response in query_models_streaming(models, model_messages):
+        role = model_roles.get(model)
+        if response is not None:
+            result = {
+                "model": model,
+                "model_name": get_model_display_name(model),
+                "response": response.get('content', ''),
+                "round": round_number
+            }
+            if role:
+                result["role"] = role
+                result["role_name"] = SPECIALIST_ROLES[role]["name"]
+            yield result
+        else:
+            # Model failed/timed out
+            result = {
+                "model": model,
+                "model_name": get_model_display_name(model),
+                "response": None,
+                "round": round_number,
+                "error": True,
+            }
+            if role:
+                result["role"] = role
+                result["role_name"] = SPECIALIST_ROLES[role]["name"]
+            yield result
+
+
 async def debate_summary(
     user_query: str,
     all_rounds: List[List[Dict[str, Any]]],
@@ -692,6 +790,74 @@ Your probing questions:"""
     return results
 
 
+async def socratic_questions_streaming(
+    user_query: str,
+    models: Optional[List[str]] = None,
+    council_type: str = "general",
+    roles_enabled: bool = False
+):
+    """
+    Streaming version of socratic_questions - yields results as each model completes.
+    """
+    models = models or DEFAULT_COUNCIL_MODELS
+
+    socratic_prompt = f"""The user has brought the following question or topic to the council:
+
+{user_query}
+
+Instead of answering directly, your role is to help the user think more deeply about this topic by asking 3-5 probing questions. These questions should:
+
+1. Challenge assumptions the user might be making
+2. Explore implications they may not have considered
+3. Clarify what they really want to achieve
+4. Uncover potential obstacles or trade-offs
+5. Help them see the issue from different angles
+
+Format your response as a numbered list of questions. After each question, briefly explain (in parentheses) why this question is important to consider.
+
+Your probing questions:"""
+
+    model_messages = {}
+    model_roles = {}
+
+    for model in models:
+        role = get_role_for_model(model, roles_enabled)
+        model_roles[model] = role
+        system_prompt = build_system_prompt(council_type, role)
+
+        model_messages[model] = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": socratic_prompt}
+        ]
+
+    async for model, response in query_models_streaming(models, model_messages):
+        role = model_roles.get(model)
+        if response is not None:
+            result = {
+                "model": model,
+                "model_name": get_model_display_name(model),
+                "response": response.get('content', ''),
+                "mode": "socratic"
+            }
+            if role:
+                result["role"] = role
+                result["role_name"] = SPECIALIST_ROLES[role]["name"]
+            yield result
+        else:
+            # Model failed/timed out
+            result = {
+                "model": model,
+                "model_name": get_model_display_name(model),
+                "response": None,
+                "mode": "socratic",
+                "error": True,
+            }
+            if role:
+                result["role"] = role
+                result["role_name"] = SPECIALIST_ROLES[role]["name"]
+            yield result
+
+
 # =============================================================================
 # SCENARIO PLANNING MODE
 # =============================================================================
@@ -783,6 +949,117 @@ Your synthesis:"""
             "model_name": get_model_display_name(chairman),
             "response": synthesis_response.get('content', '') if synthesis_response else "Error generating synthesis"
         }
+    }
+
+
+async def scenario_planning_streaming(
+    user_query: str,
+    models: Optional[List[str]] = None,
+    council_type: str = "general"
+):
+    """
+    Streaming version of scenario_planning - yields scenario results as each model completes.
+    Note: This only streams the scenarios. Synthesis is handled separately by the caller.
+    """
+    models = models or DEFAULT_COUNCIL_MODELS
+
+    # Assign each model a scenario type
+    scenario_types = ["best case", "worst case", "most likely", "wildcard/unexpected"]
+    models_to_query = models[:4]  # Max 4 scenarios
+
+    model_messages = {}
+    model_scenario_types = {}
+
+    for i, model in enumerate(models_to_query):
+        scenario_type = scenario_types[i] if i < len(scenario_types) else "alternative"
+        model_scenario_types[model] = scenario_type
+
+        scenario_prompt = f"""The user is considering the following question or decision:
+
+{user_query}
+
+Your task is to develop a detailed {scenario_type.upper()} scenario. Describe:
+
+1. What this scenario looks like (be specific and vivid)
+2. The key factors or events that would lead to this scenario
+3. The probability you assign to this scenario (as a percentage)
+4. Key indicators that would signal this scenario is unfolding
+5. Recommended actions if this scenario materializes
+
+Be concrete and actionable in your scenario planning.
+
+Your {scenario_type} scenario:"""
+
+        model_messages[model] = [{"role": "user", "content": scenario_prompt}]
+
+    async for model, response in query_models_streaming(models_to_query, model_messages):
+        scenario_type = model_scenario_types.get(model, "alternative")
+        if response is not None:
+            yield {
+                "model": model,
+                "model_name": get_model_display_name(model),
+                "scenario_type": scenario_type,
+                "response": response.get('content', '')
+            }
+        else:
+            # Model failed/timed out
+            yield {
+                "model": model,
+                "model_name": get_model_display_name(model),
+                "scenario_type": scenario_type,
+                "response": None,
+                "error": True,
+            }
+
+
+async def scenario_synthesis(
+    user_query: str,
+    scenario_results: List[Dict[str, Any]],
+    chairman_model: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Generate synthesis from completed scenarios.
+    Called after scenario_planning_streaming completes.
+    """
+    chairman = chairman_model or DEFAULT_CHAIRMAN_MODEL
+
+    # Filter out failed scenarios
+    valid_scenarios = [r for r in scenario_results if not r.get('error')]
+
+    if not valid_scenarios:
+        return {
+            "model": chairman,
+            "model_name": get_model_display_name(chairman),
+            "response": "Error: No scenarios were successfully generated."
+        }
+
+    scenarios_text = "\n\n".join([
+        f"### {r['scenario_type'].upper()} SCENARIO (by {r['model_name']}):\n{r['response']}"
+        for r in valid_scenarios
+    ])
+
+    synthesis_prompt = f"""The council has developed multiple scenarios for the following question:
+
+{user_query}
+
+SCENARIOS:
+{scenarios_text}
+
+As the Chairman, synthesize these scenarios into actionable guidance:
+1. Compare the scenarios and their likelihood
+2. Identify common factors across scenarios
+3. Recommend a robust strategy that performs reasonably well across scenarios
+4. Suggest specific trigger points for when to pivot strategies
+
+Your synthesis:"""
+
+    messages = [{"role": "user", "content": synthesis_prompt}]
+    synthesis_response = await query_model(chairman, messages)
+
+    return {
+        "model": chairman,
+        "model_name": get_model_display_name(chairman),
+        "response": synthesis_response.get('content', '') if synthesis_response else "Error generating synthesis"
     }
 
 

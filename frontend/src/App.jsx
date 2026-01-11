@@ -482,6 +482,20 @@ function App() {
             });
             break;
 
+          case 'questions_model_complete':
+            // Individual question set received - add to questions array
+            updateConversation((prev) => {
+              const messages = [...prev.messages];
+              const lastIndex = messages.length - 1;
+              const existingQuestions = messages[lastIndex].questions || [];
+              messages[lastIndex] = {
+                ...messages[lastIndex],
+                questions: [...existingQuestions, event.data],
+              };
+              return { ...prev, messages };
+            });
+            break;
+
           case 'questions_complete':
             updateConversation((prev) => {
               const messages = [...prev.messages];
@@ -503,6 +517,20 @@ function App() {
               messages[lastIndex] = {
                 ...messages[lastIndex],
                 loading: { ...messages[lastIndex].loading, scenarios: true },
+              };
+              return { ...prev, messages };
+            });
+            break;
+
+          case 'scenario_model_complete':
+            // Individual scenario received - add to scenarios array
+            updateConversation((prev) => {
+              const messages = [...prev.messages];
+              const lastIndex = messages.length - 1;
+              const existingScenarios = messages[lastIndex].scenarios || [];
+              messages[lastIndex] = {
+                ...messages[lastIndex],
+                scenarios: [...existingScenarios, event.data],
               };
               return { ...prev, messages };
             });

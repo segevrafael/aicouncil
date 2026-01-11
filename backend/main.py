@@ -21,9 +21,13 @@ from .council import (
     calculate_aggregate_rankings,
     # Mode handlers
     debate_round,
+    debate_round_streaming,
     debate_summary,
     socratic_questions,
+    socratic_questions_streaming,
     scenario_planning,
+    scenario_planning_streaming,
+    scenario_synthesis,
 )
 from .models_api import get_models_for_picker, clear_cache as clear_models_cache
 from . import supabase_db as db
@@ -668,14 +672,17 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest,
             elif request.mode == "debate":
                 # Debate mode: Start round 1, store state for continuation
                 yield f"data: {json.dumps({'type': 'debate_round_start', 'round': 1})}\n\n"
-                round1_responses = await debate_round(
+                round1_responses = []
+                async for result in debate_round_streaming(
                     request.content,
                     [],  # No previous responses for round 1
                     1,
                     request.models,
                     request.council_type,
                     request.roles_enabled
-                )
+                ):
+                    round1_responses.append(result)
+                    yield f"data: {json.dumps({'type': 'stage1_model_complete', 'data': result})}\n\n"
                 yield f"data: {json.dumps({'type': 'debate_round_complete', 'round': 1, 'data': round1_responses})}\n\n"
 
                 # Store debate state in database for serverless compatibility
@@ -704,15 +711,18 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest,
                 responders = models[:3]
                 devils_advocate = models[3] if len(models) > 3 else models[0]
 
-                # Get initial responses from 3 models
+                # Get initial responses from 3 models with streaming
                 yield f"data: {json.dumps({'type': 'stage1_start'})}\n\n"
-                initial_responses = await stage1_collect_responses(
+                initial_responses = []
+                async for result in stage1_collect_responses_streaming(
                     request.content,
                     responders,
                     request.council_type,
                     request.roles_enabled,
                     request.enhancements
-                )
+                ):
+                    initial_responses.append(result)
+                    yield f"data: {json.dumps({'type': 'stage1_model_complete', 'data': result})}\n\n"
                 yield f"data: {json.dumps({'type': 'stage1_complete', 'data': initial_responses})}\n\n"
 
                 # Build context for devil's advocate
@@ -757,14 +767,17 @@ Provide your critique:"""
                 )
 
             elif request.mode == "socratic":
-                # Socratic mode: Council asks probing questions
+                # Socratic mode: Council asks probing questions with streaming
                 yield f"data: {json.dumps({'type': 'questions_start'})}\n\n"
-                questions = await socratic_questions(
+                questions = []
+                async for result in socratic_questions_streaming(
                     request.content,
                     request.models,
                     request.council_type,
                     request.roles_enabled
-                )
+                ):
+                    questions.append(result)
+                    yield f"data: {json.dumps({'type': 'questions_model_complete', 'data': result})}\n\n"
                 yield f"data: {json.dumps({'type': 'questions_complete', 'data': questions})}\n\n"
 
                 # Store state in database for serverless compatibility
@@ -786,25 +799,33 @@ Provide your critique:"""
                 )
 
             elif request.mode == "scenario":
-                # Scenario planning mode
+                # Scenario planning mode with streaming
                 yield f"data: {json.dumps({'type': 'scenarios_start'})}\n\n"
-                result = await scenario_planning(
+                scenario_results = []
+                async for result in scenario_planning_streaming(
                     request.content,
                     request.models,
-                    request.chairman_model,
                     request.council_type
-                )
-                yield f"data: {json.dumps({'type': 'scenarios_complete', 'data': result['scenarios']})}\n\n"
+                ):
+                    scenario_results.append(result)
+                    yield f"data: {json.dumps({'type': 'scenario_model_complete', 'data': result})}\n\n"
+                yield f"data: {json.dumps({'type': 'scenarios_complete', 'data': scenario_results})}\n\n"
 
+                # Now synthesize the scenarios
                 yield f"data: {json.dumps({'type': 'stage3_start'})}\n\n"
-                yield f"data: {json.dumps({'type': 'stage3_complete', 'data': result['synthesis']})}\n\n"
+                synthesis = await scenario_synthesis(
+                    request.content,
+                    scenario_results,
+                    request.chairman_model
+                )
+                yield f"data: {json.dumps({'type': 'stage3_complete', 'data': synthesis})}\n\n"
 
                 db.add_message(
                     conversation_id, "assistant",
-                    content=result["synthesis"].get("synthesis", ""),
+                    content=synthesis.get("response", ""),
                     stage_data={
-                        "scenarios": result["scenarios"],
-                        "synthesis": result["synthesis"],
+                        "scenarios": scenario_results,
+                        "synthesis": synthesis,
                         "mode": "scenario"
                     }
                 )

@@ -139,31 +139,23 @@ export default function ChatInterface({
                     </div>
                   )}
 
-                  {/* Socratic Mode: Council Questions */}
-                  {msg.loading?.questions && (
-                    <div className="stage-loading">
-                      <div className="spinner"></div>
-                      <span>Council is formulating questions...</span>
-                    </div>
-                  )}
-                  {msg.questions && (
+                  {/* Socratic Mode: Council Questions - shows inline with skeleton tabs */}
+                  {(msg.questions || msg.loading?.questions) && (
                     <Stage1
                       responses={msg.questions}
                       title="Council Questions"
+                      expectedModels={msg.expectedModels}
+                      isLoading={msg.loading?.questions}
                     />
                   )}
 
-                  {/* Scenario Mode: Scenarios */}
-                  {msg.loading?.scenarios && (
-                    <div className="stage-loading">
-                      <div className="spinner"></div>
-                      <span>Generating scenarios...</span>
-                    </div>
-                  )}
-                  {msg.scenarios && (
+                  {/* Scenario Mode: Scenarios - shows inline with skeleton tabs */}
+                  {(msg.scenarios || msg.loading?.scenarios) && (
                     <Stage1
                       responses={msg.scenarios}
                       title="Scenario Analysis"
+                      expectedModels={msg.expectedModels?.slice(0, 4)}
+                      isLoading={msg.loading?.scenarios}
                     />
                   )}
                 </div>
