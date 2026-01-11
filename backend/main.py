@@ -14,7 +14,9 @@ from .council import (
     run_full_council,
     generate_conversation_title,
     stage1_collect_responses,
+    stage1_collect_responses_streaming,
     stage2_collect_rankings,
+    stage2_collect_rankings_streaming,
     stage3_synthesize_final,
     calculate_aggregate_rankings,
     # Mode handlers
@@ -643,15 +645,18 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest,
                 title_task = asyncio.create_task(generate_conversation_title(request.content))
 
             if request.mode == "independent":
-                # Independent mode: just collect responses
+                # Independent mode: stream individual responses as they complete
                 yield f"data: {json.dumps({'type': 'stage1_start'})}\n\n"
-                stage1_results = await stage1_collect_responses(
+                stage1_results = []
+                async for result in stage1_collect_responses_streaming(
                     request.content,
                     request.models,
                     request.council_type,
                     request.roles_enabled,
                     request.enhancements
-                )
+                ):
+                    stage1_results.append(result)
+                    yield f"data: {json.dumps({'type': 'stage1_model_complete', 'data': result})}\n\n"
                 yield f"data: {json.dumps({'type': 'stage1_complete', 'data': stage1_results})}\n\n"
 
                 # Save and complete
@@ -806,21 +811,32 @@ Provide your critique:"""
 
             else:
                 # Full 3-stage process (synthesized mode and fallback)
+                # Stage 1: Stream individual model responses as they complete
                 yield f"data: {json.dumps({'type': 'stage1_start'})}\n\n"
-                stage1_results = await stage1_collect_responses(
+                stage1_results = []
+                async for result in stage1_collect_responses_streaming(
                     request.content,
                     request.models,
                     request.council_type,
                     request.roles_enabled,
                     request.enhancements
-                )
+                ):
+                    stage1_results.append(result)
+                    yield f"data: {json.dumps({'type': 'stage1_model_complete', 'data': result})}\n\n"
                 yield f"data: {json.dumps({'type': 'stage1_complete', 'data': stage1_results})}\n\n"
 
+                # Stage 2: Stream individual rankings as they complete
                 yield f"data: {json.dumps({'type': 'stage2_start'})}\n\n"
-                stage2_results, label_to_model = await stage2_collect_rankings(request.content, stage1_results)
+                stage2_results = []
+                label_to_model = {}
+                async for result, ltm in stage2_collect_rankings_streaming(request.content, stage1_results):
+                    stage2_results.append(result)
+                    label_to_model = ltm  # Same for all, just keep updating
+                    yield f"data: {json.dumps({'type': 'stage2_model_complete', 'data': result})}\n\n"
                 aggregate_rankings = calculate_aggregate_rankings(stage2_results, label_to_model)
                 yield f"data: {json.dumps({'type': 'stage2_complete', 'data': stage2_results, 'metadata': {'label_to_model': label_to_model, 'aggregate_rankings': aggregate_rankings}})}\n\n"
 
+                # Stage 3: Single model synthesis
                 yield f"data: {json.dumps({'type': 'stage3_start'})}\n\n"
                 stage3_result = await stage3_synthesize_final(request.content, stage1_results, stage2_results)
                 yield f"data: {json.dumps({'type': 'stage3_complete', 'data': stage3_result})}\n\n"

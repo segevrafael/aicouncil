@@ -1,7 +1,7 @@
 """LLM Council orchestration with multiple modes and role support."""
 
-from typing import List, Dict, Any, Tuple, Optional
-from .openrouter import query_models_parallel, query_model
+from typing import List, Dict, Any, Tuple, Optional, AsyncGenerator
+from .openrouter import query_models_parallel, query_models_streaming, query_model
 from .config import (
     DEFAULT_COUNCIL_MODELS,
     DEFAULT_CHAIRMAN_MODEL,
@@ -139,6 +139,57 @@ async def stage1_collect_responses(
     return stage1_results
 
 
+async def stage1_collect_responses_streaming(
+    user_query: str,
+    models: Optional[List[str]] = None,
+    council_type: str = "general",
+    roles_enabled: bool = False,
+    enhancements: Optional[List[str]] = None
+) -> AsyncGenerator[Dict[str, Any], None]:
+    """
+    Stage 1: Collect individual responses, yielding each as it completes.
+
+    Args:
+        user_query: The user's question
+        models: List of model IDs to query (uses defaults if None)
+        council_type: Council type for system prompt
+        roles_enabled: Whether to use specialist roles
+        enhancements: List of enhancement keys
+
+    Yields:
+        Dict with 'model', 'response', 'role' keys as each model completes
+    """
+    models = models or DEFAULT_COUNCIL_MODELS
+
+    # Build messages with role-specific system prompts
+    model_messages = {}
+    model_roles = {}
+
+    for model in models:
+        role = get_role_for_model(model, roles_enabled)
+        model_roles[model] = role
+
+        system_prompt = build_system_prompt(council_type, role, enhancements)
+        model_messages[model] = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_query}
+        ]
+
+    # Stream results as each model completes
+    async for model, response in query_models_streaming(models, model_messages):
+        if response is not None:
+            role = model_roles.get(model)
+            result = {
+                "model": model,
+                "model_name": get_model_display_name(model),
+                "response": response.get('content', ''),
+            }
+            if role:
+                result["role"] = role
+                result["role_name"] = SPECIALIST_ROLES[role]["name"]
+            yield result
+
+
 # =============================================================================
 # STAGE 2: PEER RANKINGS
 # =============================================================================
@@ -221,6 +272,81 @@ Now provide your evaluation and ranking:"""
             })
 
     return stage2_results, label_to_model
+
+
+async def stage2_collect_rankings_streaming(
+    user_query: str,
+    stage1_results: List[Dict[str, Any]],
+    models: Optional[List[str]] = None
+) -> AsyncGenerator[Tuple[Dict[str, Any], Dict[str, str]], None]:
+    """
+    Stage 2: Each model ranks the anonymized responses, yielding as each completes.
+
+    Args:
+        user_query: The original user query
+        stage1_results: Results from Stage 1
+        models: List of model IDs (uses defaults if None)
+
+    Yields:
+        Tuple of (ranking_dict, label_to_model mapping) as each model completes
+    """
+    models = models or DEFAULT_COUNCIL_MODELS
+
+    # Create anonymized labels for responses (Response A, Response B, etc.)
+    labels = [chr(65 + i) for i in range(len(stage1_results))]
+
+    # Create mapping from label to model name
+    label_to_model = {
+        f"Response {label}": result['model']
+        for label, result in zip(labels, stage1_results)
+    }
+
+    # Build the ranking prompt
+    responses_text = "\n\n".join([
+        f"Response {label}:\n{result['response']}"
+        for label, result in zip(labels, stage1_results)
+    ])
+
+    ranking_prompt = f"""You are evaluating different responses to the following question:
+
+Question: {user_query}
+
+Here are the responses from different models (anonymized):
+
+{responses_text}
+
+Your task:
+1. First, evaluate each response individually. For each response, explain what it does well and what it does poorly.
+2. Then, at the very end of your response, provide a final ranking.
+
+IMPORTANT: Your final ranking MUST be formatted EXACTLY as follows:
+- Start with the line "FINAL RANKING:" (all caps, with colon)
+- Then list the responses from best to worst as a numbered list
+- Each line should be: number, period, space, then ONLY the response label (e.g., "1. Response A")
+- Do not add any other text or explanations in the ranking section
+
+Example format:
+FINAL RANKING:
+1. Response C
+2. Response A
+3. Response B
+
+Now provide your evaluation and ranking:"""
+
+    messages = [{"role": "user", "content": ranking_prompt}]
+
+    # Stream rankings as each model completes
+    async for model, response in query_models_streaming(models, messages):
+        if response is not None:
+            full_text = response.get('content', '')
+            parsed = parse_ranking_from_text(full_text)
+            result = {
+                "model": model,
+                "model_name": get_model_display_name(model),
+                "ranking": full_text,
+                "parsed_ranking": parsed
+            }
+            yield (result, label_to_model)
 
 
 # =============================================================================

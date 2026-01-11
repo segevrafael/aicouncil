@@ -309,7 +309,22 @@ function App() {
               const lastIndex = messages.length - 1;
               messages[lastIndex] = {
                 ...messages[lastIndex],
+                stage1: [], // Initialize empty array for streaming results
                 loading: { ...messages[lastIndex].loading, stage1: true },
+              };
+              return { ...prev, messages };
+            });
+            break;
+
+          case 'stage1_model_complete':
+            // Individual model response received - add to stage1 array
+            updateConversation((prev) => {
+              const messages = [...prev.messages];
+              const lastIndex = messages.length - 1;
+              const existingStage1 = messages[lastIndex].stage1 || [];
+              messages[lastIndex] = {
+                ...messages[lastIndex],
+                stage1: [...existingStage1, event.data],
               };
               return { ...prev, messages };
             });
@@ -334,7 +349,22 @@ function App() {
               const lastIndex = messages.length - 1;
               messages[lastIndex] = {
                 ...messages[lastIndex],
+                stage2: [], // Initialize empty array for streaming results
                 loading: { ...messages[lastIndex].loading, stage2: true },
+              };
+              return { ...prev, messages };
+            });
+            break;
+
+          case 'stage2_model_complete':
+            // Individual ranking received - add to stage2 array
+            updateConversation((prev) => {
+              const messages = [...prev.messages];
+              const lastIndex = messages.length - 1;
+              const existingStage2 = messages[lastIndex].stage2 || [];
+              messages[lastIndex] = {
+                ...messages[lastIndex],
+                stage2: [...existingStage2, event.data],
               };
               return { ...prev, messages };
             });
