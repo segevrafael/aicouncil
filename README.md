@@ -67,6 +67,8 @@ Enable specialist roles to have each model take a different perspective:
 - **Deployment:** Vercel (serverless)
 - **LLM Access:** OpenRouter (supports 100+ models)
 
+> **Note on Streaming:** The app supports real-time streaming where model responses appear as they complete (hot loading with skeleton tabs). This works when running locally, but Vercel's Python runtime buffers responses, so production shows all results at once. For true streaming in production, deploy the backend to Railway, Render, or Fly.io.
+
 ## Quick Start
 
 ### Prerequisites
