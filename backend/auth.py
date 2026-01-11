@@ -11,7 +11,8 @@ from jwt import PyJWK
 # Supabase JWT configuration
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")
 SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET")
-SUPABASE_ANON_KEY = os.getenv("VITE_SUPABASE_ANON_KEY", "")
+# Try backend env var first, then fallback to VITE_ prefix for local dev
+SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY") or os.getenv("VITE_SUPABASE_ANON_KEY", "")
 
 # Legacy password auth (for backward compatibility during migration)
 API_PASSWORD = os.getenv("COUNCIL_API_PASSWORD")
