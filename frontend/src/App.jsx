@@ -49,6 +49,9 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
 
+  // Track which conversations are loading (for background processing indicator)
+  const [loadingConversations, setLoadingConversations] = useState(new Set());
+
   // Confirmation dialog state for mid-session messages
   const [pendingMessage, setPendingMessage] = useState(null);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
@@ -192,13 +195,25 @@ function App() {
         ...conversations,
       ]);
       setCurrentConversationId(newConv.id);
+      // New conversation isn't loading anything - clear loading state from previous conversation
+      setIsLoading(false);
     } catch (error) {
       console.error('Failed to create conversation:', error);
     }
   };
 
-  const handleSelectConversation = (id) => {
-    setCurrentConversationId(id);
+  const handleSelectConversation = async (id) => {
+    // Update isLoading based on whether this conversation is loading in the background
+    setIsLoading(loadingConversations.has(id));
+
+    // If switching to a different conversation, explicitly reload it
+    // (handles case where background processing completed)
+    if (id !== currentConversationId) {
+      setCurrentConversationId(id);
+      // Force reload the conversation to get latest messages
+      await loadConversation(id);
+      await loadConversationState(id);
+    }
   };
 
   const handleSendMessage = async (content) => {
@@ -217,11 +232,26 @@ function App() {
   };
 
   const sendMessageDirectly = async (content) => {
+    // Capture conversation ID at start (for background processing support)
+    const targetConvId = currentConversationId;
+
     setIsLoading(true);
+    // Track this conversation as loading (for sidebar indicator)
+    setLoadingConversations(prev => new Set(prev).add(targetConvId));
+
+    // Helper to safely update conversation only if it's still current
+    const updateConversation = (updateFn) => {
+      setCurrentConversation((prev) => {
+        // Only update if still viewing the target conversation
+        if (prev?.id !== targetConvId) return prev;
+        return updateFn(prev);
+      });
+    };
+
     try {
       // Optimistically add user message to UI
       const userMessage = { role: 'user', content };
-      setCurrentConversation((prev) => ({
+      updateConversation((prev) => ({
         ...prev,
         messages: [...prev.messages, userMessage],
       }));
@@ -242,7 +272,7 @@ function App() {
       };
 
       // Add the partial assistant message
-      setCurrentConversation((prev) => ({
+      updateConversation((prev) => ({
         ...prev,
         messages: [...prev.messages, assistantMessage],
       }));
@@ -255,14 +285,14 @@ function App() {
         enhancements: selectedEnhancements,
       };
 
-      await api.sendMessageStream(currentConversationId, content, (eventType, event) => {
+      await api.sendMessageStream(targetConvId, content, (eventType, event) => {
         switch (eventType) {
           case 'mode':
             // Mode info received
             break;
 
           case 'stage1_start':
-            setCurrentConversation((prev) => {
+            updateConversation((prev) => {
               const messages = [...prev.messages];
               const lastIndex = messages.length - 1;
               messages[lastIndex] = {
@@ -274,7 +304,7 @@ function App() {
             break;
 
           case 'stage1_complete':
-            setCurrentConversation((prev) => {
+            updateConversation((prev) => {
               const messages = [...prev.messages];
               const lastIndex = messages.length - 1;
               messages[lastIndex] = {
@@ -287,7 +317,7 @@ function App() {
             break;
 
           case 'stage2_start':
-            setCurrentConversation((prev) => {
+            updateConversation((prev) => {
               const messages = [...prev.messages];
               const lastIndex = messages.length - 1;
               messages[lastIndex] = {
@@ -299,7 +329,7 @@ function App() {
             break;
 
           case 'stage2_complete':
-            setCurrentConversation((prev) => {
+            updateConversation((prev) => {
               const messages = [...prev.messages];
               const lastIndex = messages.length - 1;
               messages[lastIndex] = {
@@ -313,7 +343,7 @@ function App() {
             break;
 
           case 'stage3_start':
-            setCurrentConversation((prev) => {
+            updateConversation((prev) => {
               const messages = [...prev.messages];
               const lastIndex = messages.length - 1;
               messages[lastIndex] = {
@@ -325,7 +355,7 @@ function App() {
             break;
 
           case 'stage3_complete':
-            setCurrentConversation((prev) => {
+            updateConversation((prev) => {
               const messages = [...prev.messages];
               const lastIndex = messages.length - 1;
               messages[lastIndex] = {
@@ -339,7 +369,7 @@ function App() {
 
           // Debate mode handlers
           case 'debate_round_start':
-            setCurrentConversation((prev) => {
+            updateConversation((prev) => {
               const messages = [...prev.messages];
               const lastIndex = messages.length - 1;
               messages[lastIndex] = {
@@ -352,7 +382,7 @@ function App() {
             break;
 
           case 'debate_round_complete':
-            setCurrentConversation((prev) => {
+            updateConversation((prev) => {
               const messages = [...prev.messages];
               const lastIndex = messages.length - 1;
               messages[lastIndex] = {
@@ -371,7 +401,7 @@ function App() {
 
           // Adversarial mode handlers
           case 'critique_start':
-            setCurrentConversation((prev) => {
+            updateConversation((prev) => {
               const messages = [...prev.messages];
               const lastIndex = messages.length - 1;
               messages[lastIndex] = {
@@ -383,7 +413,7 @@ function App() {
             break;
 
           case 'critique_complete':
-            setCurrentConversation((prev) => {
+            updateConversation((prev) => {
               const messages = [...prev.messages];
               const lastIndex = messages.length - 1;
               messages[lastIndex] = {
@@ -397,7 +427,7 @@ function App() {
 
           // Socratic mode handlers
           case 'questions_start':
-            setCurrentConversation((prev) => {
+            updateConversation((prev) => {
               const messages = [...prev.messages];
               const lastIndex = messages.length - 1;
               messages[lastIndex] = {
@@ -409,7 +439,7 @@ function App() {
             break;
 
           case 'questions_complete':
-            setCurrentConversation((prev) => {
+            updateConversation((prev) => {
               const messages = [...prev.messages];
               const lastIndex = messages.length - 1;
               messages[lastIndex] = {
@@ -423,7 +453,7 @@ function App() {
 
           // Scenario mode handlers
           case 'scenarios_start':
-            setCurrentConversation((prev) => {
+            updateConversation((prev) => {
               const messages = [...prev.messages];
               const lastIndex = messages.length - 1;
               messages[lastIndex] = {
@@ -435,7 +465,7 @@ function App() {
             break;
 
           case 'scenarios_complete':
-            setCurrentConversation((prev) => {
+            updateConversation((prev) => {
               const messages = [...prev.messages];
               const lastIndex = messages.length - 1;
               messages[lastIndex] = {
@@ -455,13 +485,30 @@ function App() {
           case 'complete':
             // Stream complete, reload conversations list and state
             loadConversations();
-            loadConversationState(currentConversationId);
-            setIsLoading(false);
+            loadConversationState(targetConvId);
+            // Remove from loading set
+            setLoadingConversations(prev => {
+              const next = new Set(prev);
+              next.delete(targetConvId);
+              return next;
+            });
+            // Only clear isLoading if this was the current conversation
+            if (targetConvId === currentConversationId) {
+              setIsLoading(false);
+            }
             break;
 
           case 'error':
             console.error('Stream error:', event.message);
-            setIsLoading(false);
+            // Remove from loading set
+            setLoadingConversations(prev => {
+              const next = new Set(prev);
+              next.delete(targetConvId);
+              return next;
+            });
+            if (targetConvId === currentConversationId) {
+              setIsLoading(false);
+            }
             break;
 
           default:
@@ -470,12 +517,20 @@ function App() {
       }, options);
     } catch (error) {
       console.error('Failed to send message:', error);
-      // Remove optimistic messages on error
-      setCurrentConversation((prev) => ({
+      // Remove optimistic messages on error (only if still viewing this conversation)
+      updateConversation((prev) => ({
         ...prev,
         messages: prev.messages.slice(0, -2),
       }));
-      setIsLoading(false);
+      // Remove from loading set
+      setLoadingConversations(prev => {
+        const next = new Set(prev);
+        next.delete(targetConvId);
+        return next;
+      });
+      if (targetConvId === currentConversationId) {
+        setIsLoading(false);
+      }
     }
   };
 
@@ -599,6 +654,7 @@ function App() {
       <Sidebar
         conversations={conversations}
         currentConversationId={currentConversationId}
+        loadingConversations={loadingConversations}
         onSelectConversation={handleSelectConversation}
         onNewConversation={handleNewConversation}
         onArchiveConversation={handleArchiveConversation}

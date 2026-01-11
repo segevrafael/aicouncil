@@ -3,6 +3,7 @@ import './Sidebar.css';
 export default function Sidebar({
   conversations,
   currentConversationId,
+  loadingConversations = new Set(),
   onSelectConversation,
   onNewConversation,
   onArchiveConversation,
@@ -38,32 +39,36 @@ export default function Sidebar({
           <div className="no-conversations">No conversations yet</div>
         ) : (
           <>
-            {activeConversations.map((conv) => (
-              <div
-                key={conv.id}
-                className={`conversation-item ${
-                  conv.id === currentConversationId ? 'active' : ''
-                }`}
-                onClick={() => onSelectConversation(conv.id)}
-              >
-                <div className="conversation-content">
-                  <div className="conversation-title">
-                    {conv.title || 'New Conversation'}
-                  </div>
-                  <div className="conversation-meta">
-                    {conv.message_count} messages
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  className="archive-btn"
-                  onClick={(e) => handleArchive(e, conv.id, conv.is_archived)}
-                  title="Archive conversation"
+            {activeConversations.map((conv) => {
+              const isLoading = loadingConversations.has(conv.id);
+              return (
+                <div
+                  key={conv.id}
+                  className={`conversation-item ${
+                    conv.id === currentConversationId ? 'active' : ''
+                  } ${isLoading ? 'loading' : ''}`}
+                  onClick={() => onSelectConversation(conv.id)}
                 >
-                  📦
-                </button>
-              </div>
-            ))}
+                  <div className="conversation-content">
+                    <div className="conversation-title">
+                      {isLoading && <span className="loading-dot"></span>}
+                      {conv.title || 'New Conversation'}
+                    </div>
+                    <div className="conversation-meta">
+                      {isLoading ? 'Processing...' : `${conv.message_count} messages`}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="archive-btn"
+                    onClick={(e) => handleArchive(e, conv.id, conv.is_archived)}
+                    title="Archive conversation"
+                  >
+                    📦
+                  </button>
+                </div>
+              );
+            })}
 
             {/* Archived section */}
             {archivedConversations.length > 0 && (
