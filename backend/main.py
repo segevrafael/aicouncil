@@ -637,6 +637,9 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest,
 
     async def event_generator():
         try:
+            # Send initial padding to flush proxy buffers (Vercel/nginx workaround)
+            yield ": " + " " * 2048 + "\n\n"
+
             # Send mode info
             yield f"data: {json.dumps({'type': 'mode', 'data': request.mode})}\n\n"
 
