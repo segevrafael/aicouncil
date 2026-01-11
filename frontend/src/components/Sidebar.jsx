@@ -4,6 +4,7 @@ export default function Sidebar({
   conversations,
   currentConversationId,
   loadingConversations = new Set(),
+  unreadConversations = new Set(),
   onSelectConversation,
   onNewConversation,
   onArchiveConversation,
@@ -41,17 +42,19 @@ export default function Sidebar({
           <>
             {activeConversations.map((conv) => {
               const isLoading = loadingConversations.has(conv.id);
+              const isUnread = unreadConversations.has(conv.id);
               return (
                 <div
                   key={conv.id}
                   className={`conversation-item ${
                     conv.id === currentConversationId ? 'active' : ''
-                  } ${isLoading ? 'loading' : ''}`}
+                  } ${isLoading ? 'loading' : ''} ${isUnread ? 'unread' : ''}`}
                   onClick={() => onSelectConversation(conv.id)}
                 >
                   <div className="conversation-content">
                     <div className="conversation-title">
                       {isLoading && <span className="loading-dot"></span>}
+                      {isUnread && !isLoading && <span className="unread-dot"></span>}
                       {conv.title || 'New Conversation'}
                     </div>
                     <div className="conversation-meta">

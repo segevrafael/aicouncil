@@ -51,6 +51,8 @@ function App() {
 
   // Track which conversations are loading (for background processing indicator)
   const [loadingConversations, setLoadingConversations] = useState(new Set());
+  // Track conversations that completed in background but haven't been viewed yet
+  const [unreadConversations, setUnreadConversations] = useState(new Set());
 
   // Confirmation dialog state for mid-session messages
   const [pendingMessage, setPendingMessage] = useState(null);
@@ -205,6 +207,16 @@ function App() {
   const handleSelectConversation = async (id) => {
     // Update isLoading based on whether this conversation is loading in the background
     setIsLoading(loadingConversations.has(id));
+
+    // Mark conversation as read (remove from unread set)
+    setUnreadConversations(prev => {
+      if (prev.has(id)) {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      }
+      return prev;
+    });
 
     // If switching to a different conversation, explicitly reload it
     // (handles case where background processing completed)
@@ -478,13 +490,19 @@ function App() {
             break;
 
           case 'title_complete':
-            // Reload conversations to get updated title
-            loadConversations();
+            // Update title in local state (don't reload to preserve list order)
+            if (event.title) {
+              setConversations(prev => prev.map(c =>
+                c.id === targetConvId ? { ...c, title: event.title } : c
+              ));
+            }
             break;
 
           case 'complete':
-            // Stream complete, reload conversations list and state
-            loadConversations();
+            // Update message count locally (don't reload to preserve list order)
+            setConversations(prev => prev.map(c =>
+              c.id === targetConvId ? { ...c, message_count: (c.message_count || 0) + 2 } : c
+            ));
             loadConversationState(targetConvId);
             // Remove from loading set
             setLoadingConversations(prev => {
@@ -492,8 +510,10 @@ function App() {
               next.delete(targetConvId);
               return next;
             });
-            // Only clear isLoading if this was the current conversation
-            if (targetConvId === currentConversationId) {
+            // If background conversation, mark as unread
+            if (targetConvId !== currentConversationId) {
+              setUnreadConversations(prev => new Set(prev).add(targetConvId));
+            } else {
               setIsLoading(false);
             }
             break;
@@ -655,6 +675,7 @@ function App() {
         conversations={conversations}
         currentConversationId={currentConversationId}
         loadingConversations={loadingConversations}
+        unreadConversations={unreadConversations}
         onSelectConversation={handleSelectConversation}
         onNewConversation={handleNewConversation}
         onArchiveConversation={handleArchiveConversation}
