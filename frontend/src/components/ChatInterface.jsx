@@ -90,36 +90,24 @@ export default function ChatInterface({
                     )}
                   </div>
 
-                  {/* Stage 1 / Debate Round */}
-                  {msg.loading?.stage1 && (
-                    <div className="stage-loading">
-                      <div className="spinner"></div>
-                      <span>
-                        {msg.debateRound
-                          ? `Running Debate Round ${msg.debateRound}...`
-                          : 'Running Stage 1: Collecting individual responses...'}
-                      </span>
-                    </div>
-                  )}
-                  {msg.stage1 && (
+                  {/* Stage 1 / Debate Round - now shows inline loading with skeleton tabs */}
+                  {(msg.stage1 || msg.loading?.stage1) && (
                     <Stage1
                       responses={msg.stage1}
                       title={msg.debateRound ? `Debate Round ${msg.debateRound}` : undefined}
+                      expectedModels={msg.expectedModels}
+                      isLoading={msg.loading?.stage1}
                     />
                   )}
 
-                  {/* Stage 2 */}
-                  {msg.loading?.stage2 && (
-                    <div className="stage-loading">
-                      <div className="spinner"></div>
-                      <span>Running Stage 2: Peer rankings...</span>
-                    </div>
-                  )}
-                  {msg.stage2 && (
+                  {/* Stage 2 - now shows inline loading with skeleton tabs */}
+                  {(msg.stage2 || msg.loading?.stage2) && (
                     <Stage2
                       rankings={msg.stage2}
                       labelToModel={msg.metadata?.label_to_model}
                       aggregateRankings={msg.metadata?.aggregate_rankings}
+                      expectedModels={msg.expectedModels}
+                      isLoading={msg.loading?.stage2}
                     />
                   )}
 

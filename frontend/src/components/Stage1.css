@@ -93,3 +93,98 @@
   background: rgba(168, 85, 247, 0.2);
   color: #a855f7;
 }
+
+/* Progress counter */
+.progress-counter {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-secondary, #888);
+  margin-left: 12px;
+  padding: 2px 8px;
+  background: var(--bg-tertiary, #252538);
+  border-radius: 4px;
+}
+
+/* Pending/skeleton tab styles */
+.tab.pending {
+  opacity: 0.6;
+  cursor: not-allowed;
+  position: relative;
+}
+
+.tab.pending:hover {
+  background: var(--bg-tertiary, #252538);
+  color: var(--text-secondary, #888);
+  border-color: var(--border-color, #333);
+}
+
+.skeleton-text {
+  opacity: 0.5;
+}
+
+.tab-spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin-left: 6px;
+  border: 2px solid var(--bg-hover, #2f2f45);
+  border-top-color: var(--accent-color, #6366f1);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+/* Tab appear animation */
+.tab.tab-appear {
+  animation: tabAppear 0.3s ease-out;
+}
+
+@keyframes tabAppear {
+  from {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Content fade in */
+.fade-in {
+  animation: fadeIn 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Content loading state */
+.content-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  color: var(--text-secondary, #888);
+  gap: 12px;
+}
+
+.content-spinner {
+  width: 24px;
+  height: 24px;
+  border: 3px solid var(--bg-hover, #2f2f45);
+  border-top-color: var(--accent-color, #6366f1);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

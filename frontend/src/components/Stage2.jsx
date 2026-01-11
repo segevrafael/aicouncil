@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import './Stage2.css';
@@ -15,16 +15,45 @@ function deAnonymizeText(text, labelToModel) {
   return result;
 }
 
-export default function Stage2({ rankings, labelToModel, aggregateRankings }) {
+export default function Stage2({ rankings, labelToModel, aggregateRankings, expectedModels, isLoading }) {
   const [activeTab, setActiveTab] = useState(0);
 
-  if (!rankings || rankings.length === 0) {
+  // Get list of models that have responded
+  const completedModels = rankings?.map(r => r.model) || [];
+
+  // Build the full tab list: completed + pending
+  const allModels = expectedModels || completedModels;
+  const totalExpected = allModels.length;
+  const completedCount = completedModels.length;
+
+  // Auto-select the first completed tab when streaming
+  useEffect(() => {
+    if (rankings?.length === 1 && activeTab !== 0) {
+      setActiveTab(0);
+    }
+  }, [rankings?.length]);
+
+  // Check if a model has completed
+  const isCompleted = (model) => completedModels.includes(model);
+
+  // Get ranking for a model (if completed)
+  const getRanking = (model) => rankings?.find(r => r.model === model);
+
+  // Don't render if no rankings and not loading
+  if ((!rankings || rankings.length === 0) && !isLoading) {
     return null;
   }
 
   return (
     <div className="stage stage2">
-      <h3 className="stage-title">Stage 2: Peer Rankings</h3>
+      <h3 className="stage-title">
+        Stage 2: Peer Rankings
+        {isLoading && totalExpected > 0 && (
+          <span className="progress-counter">
+            {completedCount} of {totalExpected} complete
+          </span>
+        )}
+      </h3>
 
       <h4>Raw Evaluations</h4>
       <p className="stage-description">
@@ -33,46 +62,68 @@ export default function Stage2({ rankings, labelToModel, aggregateRankings }) {
       </p>
 
       <div className="tabs">
-        {rankings.map((rank, index) => (
-          <button
-            key={index}
-            className={`tab ${activeTab === index ? 'active' : ''}`}
-            onClick={() => setActiveTab(index)}
-          >
-            {rank.model.split('/')[1] || rank.model}
-          </button>
-        ))}
+        {allModels.map((model, index) => {
+          const completed = isCompleted(model);
+          const modelName = model.split('/')[1] || model;
+
+          return (
+            <button
+              key={model}
+              className={`tab ${activeTab === index ? 'active' : ''} ${completed ? 'completed' : 'pending'} ${completed ? 'tab-appear' : ''}`}
+              onClick={() => completed && setActiveTab(index)}
+              disabled={!completed}
+            >
+              {completed ? (
+                modelName
+              ) : (
+                <>
+                  <span className="skeleton-text">{modelName}</span>
+                  <span className="tab-spinner"></span>
+                </>
+              )}
+            </button>
+          );
+        })}
       </div>
 
       <div className="tab-content">
-        <div className="ranking-model">
-          {rankings[activeTab].model}
-        </div>
-        <div className="ranking-content markdown-content">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>
-            {deAnonymizeText(rankings[activeTab].ranking, labelToModel)}
-          </ReactMarkdown>
-        </div>
+        {rankings && rankings.length > 0 && activeTab < rankings.length ? (
+          <>
+            <div className="ranking-model">
+              {rankings[activeTab].model}
+            </div>
+            <div className="ranking-content markdown-content fade-in">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {deAnonymizeText(rankings[activeTab].ranking, labelToModel)}
+              </ReactMarkdown>
+            </div>
 
-        {rankings[activeTab].parsed_ranking &&
-         rankings[activeTab].parsed_ranking.length > 0 && (
-          <div className="parsed-ranking">
-            <strong>Extracted Ranking:</strong>
-            <ol>
-              {rankings[activeTab].parsed_ranking.map((label, i) => (
-                <li key={i}>
-                  {labelToModel && labelToModel[label]
-                    ? labelToModel[label].split('/')[1] || labelToModel[label]
-                    : label}
-                </li>
-              ))}
-            </ol>
+            {rankings[activeTab].parsed_ranking &&
+             rankings[activeTab].parsed_ranking.length > 0 && (
+              <div className="parsed-ranking fade-in">
+                <strong>Extracted Ranking:</strong>
+                <ol>
+                  {rankings[activeTab].parsed_ranking.map((label, i) => (
+                    <li key={i}>
+                      {labelToModel && labelToModel[label]
+                        ? labelToModel[label].split('/')[1] || labelToModel[label]
+                        : label}
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            )}
+          </>
+        ) : isLoading ? (
+          <div className="content-loading">
+            <div className="content-spinner"></div>
+            <span>Waiting for peer rankings...</span>
           </div>
-        )}
+        ) : null}
       </div>
 
       {aggregateRankings && aggregateRankings.length > 0 && (
-        <div className="aggregate-rankings">
+        <div className="aggregate-rankings fade-in">
           <h4>Aggregate Rankings (Street Cred)</h4>
           <p className="stage-description">
             Combined results across all peer evaluations (lower score is better):

@@ -269,9 +269,11 @@ function App() {
       }));
 
       // Create a partial assistant message that will be updated progressively
+      const expectedModels = config?.defaults?.models || [];
       const assistantMessage = {
         role: 'assistant',
         mode: selectedMode,
+        expectedModels, // Store expected models for streaming UI
         stage1: null,
         stage2: null,
         stage3: null,
