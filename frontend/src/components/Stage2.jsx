@@ -18,13 +18,17 @@ function deAnonymizeText(text, labelToModel) {
 export default function Stage2({ rankings, labelToModel, aggregateRankings, expectedModels, isLoading }) {
   const [activeTab, setActiveTab] = useState(0);
 
-  // Get list of models that have responded
+  // Get list of models that have responded (including failed ones)
   const completedModels = rankings?.map(r => r.model) || [];
+
+  // Get list of failed models
+  const failedModels = rankings?.filter(r => r.error)?.map(r => r.model) || [];
 
   // Build the full tab list: completed + pending
   const allModels = expectedModels || completedModels;
   const totalExpected = allModels.length;
   const completedCount = completedModels.length;
+  const successCount = completedCount - failedModels.length;
 
   // Auto-select the first completed tab when streaming
   useEffect(() => {
@@ -33,8 +37,11 @@ export default function Stage2({ rankings, labelToModel, aggregateRankings, expe
     }
   }, [rankings?.length]);
 
-  // Check if a model has completed
+  // Check if a model has completed (includes failed)
   const isCompleted = (model) => completedModels.includes(model);
+
+  // Check if a model has failed
+  const isFailed = (model) => failedModels.includes(model);
 
   // Get ranking for a model (if completed)
   const getRanking = (model) => rankings?.find(r => r.model === model);
@@ -50,7 +57,8 @@ export default function Stage2({ rankings, labelToModel, aggregateRankings, expe
         Stage 2: Peer Rankings
         {isLoading && totalExpected > 0 && (
           <span className="progress-counter">
-            {completedCount} of {totalExpected} complete
+            {successCount} of {totalExpected} complete
+            {failedModels.length > 0 && <span className="failed-count">, {failedModels.length} failed</span>}
           </span>
         )}
       </h3>
@@ -64,16 +72,22 @@ export default function Stage2({ rankings, labelToModel, aggregateRankings, expe
       <div className="tabs">
         {allModels.map((model, index) => {
           const completed = isCompleted(model);
+          const failed = isFailed(model);
           const modelName = model.split('/')[1] || model;
 
           return (
             <button
               key={model}
-              className={`tab ${activeTab === index ? 'active' : ''} ${completed ? 'completed' : 'pending'} ${completed ? 'tab-appear' : ''}`}
+              className={`tab ${activeTab === index ? 'active' : ''} ${completed ? 'completed' : 'pending'} ${failed ? 'failed' : ''} ${completed ? 'tab-appear' : ''}`}
               onClick={() => completed && setActiveTab(index)}
               disabled={!completed}
             >
-              {completed ? (
+              {failed ? (
+                <>
+                  <span className="failed-text">{modelName}</span>
+                  <span className="failed-icon">✗</span>
+                </>
+              ) : completed ? (
                 modelName
               ) : (
                 <>
@@ -88,32 +102,42 @@ export default function Stage2({ rankings, labelToModel, aggregateRankings, expe
 
       <div className="tab-content">
         {rankings && rankings.length > 0 && activeTab < rankings.length ? (
-          <>
-            <div className="ranking-model">
-              {rankings[activeTab].model}
-            </div>
-            <div className="ranking-content markdown-content fade-in">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                {deAnonymizeText(rankings[activeTab].ranking, labelToModel)}
-              </ReactMarkdown>
-            </div>
-
-            {rankings[activeTab].parsed_ranking &&
-             rankings[activeTab].parsed_ranking.length > 0 && (
-              <div className="parsed-ranking fade-in">
-                <strong>Extracted Ranking:</strong>
-                <ol>
-                  {rankings[activeTab].parsed_ranking.map((label, i) => (
-                    <li key={i}>
-                      {labelToModel && labelToModel[label]
-                        ? labelToModel[label].split('/')[1] || labelToModel[label]
-                        : label}
-                    </li>
-                  ))}
-                </ol>
+          rankings[activeTab].error ? (
+            <div className="content-error fade-in">
+              <div className="error-icon">⚠</div>
+              <div className="error-message">
+                <strong>{rankings[activeTab].model_name || rankings[activeTab].model}</strong> failed to submit rankings.
+                <p>The model timed out or encountered an error.</p>
               </div>
-            )}
-          </>
+            </div>
+          ) : (
+            <>
+              <div className="ranking-model">
+                {rankings[activeTab].model}
+              </div>
+              <div className="ranking-content markdown-content fade-in">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  {deAnonymizeText(rankings[activeTab].ranking, labelToModel)}
+                </ReactMarkdown>
+              </div>
+
+              {rankings[activeTab].parsed_ranking &&
+               rankings[activeTab].parsed_ranking.length > 0 && (
+                <div className="parsed-ranking fade-in">
+                  <strong>Extracted Ranking:</strong>
+                  <ol>
+                    {rankings[activeTab].parsed_ranking.map((label, i) => (
+                      <li key={i}>
+                        {labelToModel && labelToModel[label]
+                          ? labelToModel[label].split('/')[1] || labelToModel[label]
+                          : label}
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              )}
+            </>
+          )
         ) : isLoading ? (
           <div className="content-loading">
             <div className="content-spinner"></div>

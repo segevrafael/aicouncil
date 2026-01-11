@@ -246,3 +246,62 @@
     transform: rotate(360deg);
   }
 }
+
+/* Failed state styles */
+.stage2 .failed-count {
+  color: #ef4444;
+}
+
+.stage2 .tab.failed {
+  opacity: 1;
+  cursor: pointer;
+  border-color: rgba(239, 68, 68, 0.5);
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.stage2 .tab.failed:hover {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: #ef4444;
+}
+
+.stage2 .tab.failed.active {
+  border-color: #ef4444;
+  border-bottom-color: var(--bg-tertiary, #252538);
+}
+
+.stage2 .failed-text {
+  color: #ef4444;
+}
+
+.stage2 .failed-icon {
+  margin-left: 6px;
+  color: #ef4444;
+  font-weight: bold;
+}
+
+/* Content error state */
+.stage2 .content-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  color: var(--text-secondary, #888);
+  gap: 12px;
+  text-align: center;
+}
+
+.stage2 .content-error .error-icon {
+  font-size: 32px;
+  color: #ef4444;
+}
+
+.stage2 .content-error .error-message {
+  color: var(--text-primary, #fff);
+}
+
+.stage2 .content-error .error-message p {
+  margin: 8px 0 0 0;
+  color: var(--text-secondary, #888);
+  font-size: 13px;
+}

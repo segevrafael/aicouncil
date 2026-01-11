@@ -177,12 +177,24 @@ async def stage1_collect_responses_streaming(
 
     # Stream results as each model completes
     async for model, response in query_models_streaming(models, model_messages):
+        role = model_roles.get(model)
         if response is not None:
-            role = model_roles.get(model)
             result = {
                 "model": model,
                 "model_name": get_model_display_name(model),
                 "response": response.get('content', ''),
+            }
+            if role:
+                result["role"] = role
+                result["role_name"] = SPECIALIST_ROLES[role]["name"]
+            yield result
+        else:
+            # Model failed/timed out - yield error result so UI can update
+            result = {
+                "model": model,
+                "model_name": get_model_display_name(model),
+                "response": None,
+                "error": True,
             }
             if role:
                 result["role"] = role
@@ -345,6 +357,16 @@ Now provide your evaluation and ranking:"""
                 "model_name": get_model_display_name(model),
                 "ranking": full_text,
                 "parsed_ranking": parsed
+            }
+            yield (result, label_to_model)
+        else:
+            # Model failed/timed out - yield error result so UI can update
+            result = {
+                "model": model,
+                "model_name": get_model_display_name(model),
+                "ranking": None,
+                "parsed_ranking": [],
+                "error": True,
             }
             yield (result, label_to_model)
 
