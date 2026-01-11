@@ -11,9 +11,7 @@ from typing import Optional
 try:
     from jwt import PyJWK
     HAS_CRYPTO = True
-except ImportError as e:
-    print(f"[AUTH] PyJWK/cryptography not available: {e}")
-    print("[AUTH] ES256 tokens will not be supported, falling back to HS256 only")
+except ImportError:
     HAS_CRYPTO = False
     PyJWK = None
 
@@ -31,6 +29,7 @@ _jwks_cache = None
 _jwks_cache_time = 0
 JWKS_CACHE_TTL = 3600  # 1 hour cache
 
+
 def fetch_jwks():
     """Fetch JWKS from Supabase with proper authentication."""
     global _jwks_cache, _jwks_cache_time
@@ -42,23 +41,20 @@ def fetch_jwks():
     if not SUPABASE_URL:
         return None
 
-    # Try the .well-known endpoint first
-    jwks_url = f"{SUPABASE_URL}/auth/v1/.well-known/jwks.json"
     headers = {}
     if SUPABASE_ANON_KEY:
         headers["apikey"] = SUPABASE_ANON_KEY
 
+    # Try the .well-known endpoint first
+    jwks_url = f"{SUPABASE_URL}/auth/v1/.well-known/jwks.json"
     try:
         response = requests.get(jwks_url, headers=headers, timeout=10)
         if response.status_code == 200:
             _jwks_cache = response.json()
             _jwks_cache_time = time.time()
-            print(f"[AUTH DEBUG] Successfully fetched JWKS from {jwks_url}")
             return _jwks_cache
-        else:
-            print(f"[AUTH DEBUG] JWKS fetch failed: {response.status_code} {response.text[:200]}")
-    except Exception as e:
-        print(f"[AUTH DEBUG] JWKS fetch error: {type(e).__name__}: {e}")
+    except Exception:
+        pass
 
     # Fallback to alternate endpoint
     jwks_url = f"{SUPABASE_URL}/auth/v1/jwks"
@@ -67,17 +63,16 @@ def fetch_jwks():
         if response.status_code == 200:
             _jwks_cache = response.json()
             _jwks_cache_time = time.time()
-            print(f"[AUTH DEBUG] Successfully fetched JWKS from {jwks_url}")
             return _jwks_cache
-    except Exception as e:
-        print(f"[AUTH DEBUG] JWKS fallback fetch error: {type(e).__name__}: {e}")
+    except Exception:
+        pass
 
     return None
+
 
 def get_signing_key_from_jwks(token: str):
     """Get the signing key for a JWT token from JWKS."""
     if not HAS_CRYPTO:
-        print("[AUTH DEBUG] Cryptography not available, cannot verify ES256 tokens")
         return None
 
     jwks = fetch_jwks()
@@ -94,11 +89,9 @@ def get_signing_key_from_jwks(token: str):
             try:
                 jwk = PyJWK.from_dict(key_data)
                 return jwk.key
-            except Exception as e:
-                print(f"[AUTH DEBUG] Error parsing JWK: {type(e).__name__}: {e}")
+            except Exception:
                 return None
 
-    print(f"[AUTH DEBUG] No matching key found for kid: {kid}")
     return None
 
 
@@ -173,12 +166,9 @@ def get_current_user(authorization: Optional[str] = Header(None)) -> dict:
                 detail="Token has expired. Please log in again.",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-        except jwt.InvalidTokenError as e:
-            # Fall through to legacy password check
-            print(f"[AUTH DEBUG] JWT decode error: {type(e).__name__}: {e}")
-            pass
-        except Exception as e:
-            print(f"[AUTH DEBUG] Unexpected error: {type(e).__name__}: {e}")
+        except jwt.InvalidTokenError:
+            pass  # Fall through to legacy password check
+        except Exception:
             pass
 
     # Legacy password auth (backward compatibility)
