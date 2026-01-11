@@ -13,7 +13,8 @@ export default function Stage1({ responses, title, expectedModels, isLoading }) 
   const failedModels = responses?.filter(r => r.error)?.map(r => r.model) || [];
 
   // Build the full tab list: completed + pending
-  const allModels = expectedModels || completedModels;
+  // Use expectedModels if it has items, otherwise fall back to completedModels
+  const allModels = (expectedModels && expectedModels.length > 0) ? expectedModels : completedModels;
   const totalExpected = allModels.length;
   const completedCount = completedModels.length;
   const successCount = completedCount - failedModels.length;
