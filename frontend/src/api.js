@@ -85,7 +85,7 @@ export const api = {
    */
   async getConfig() {
     const response = await fetch(`${API_BASE}/api/config`, {
-      headers: getHeaders(false),
+      headers: await getHeaders(false),
     });
     return handleResponse(response);
   },
@@ -95,7 +95,7 @@ export const api = {
    */
   async getModels() {
     const response = await fetch(`${API_BASE}/api/models`, {
-      headers: getHeaders(false),
+      headers: await getHeaders(false),
     });
     return handleResponse(response);
   },
@@ -122,7 +122,7 @@ export const api = {
   async listConversations(includeArchived = false) {
     const params = includeArchived ? '?include_archived=true' : '';
     const response = await fetch(`${API_BASE}/api/conversations${params}`, {
-      headers: getHeaders(false),
+      headers: await getHeaders(false),
     });
     return handleResponse(response);
   },
@@ -146,7 +146,7 @@ export const api = {
     const response = await fetch(
       `${API_BASE}/api/conversations/${conversationId}`,
       {
-        headers: getHeaders(false),
+        headers: await getHeaders(false),
       }
     );
     return handleResponse(response);
@@ -160,7 +160,7 @@ export const api = {
       `${API_BASE}/api/conversations/${conversationId}`,
       {
         method: 'DELETE',
-        headers: getHeaders(false),
+        headers: await getHeaders(false),
       }
     );
     return handleResponse(response);
@@ -190,7 +190,7 @@ export const api = {
     const response = await fetch(
       `${API_BASE}/api/conversations/${conversationId}/state`,
       {
-        headers: getHeaders(false),
+        headers: await getHeaders(false),
       }
     );
     return handleResponse(response);
@@ -269,6 +269,7 @@ export const api = {
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
+    let buffer = '';
 
     while (true) {
       const { done, value } = await reader.read();
@@ -276,9 +277,34 @@ export const api = {
         break;
       }
 
-      const chunk = decoder.decode(value);
-      const lines = chunk.split('\n');
+      // Append new data to buffer
+      buffer += decoder.decode(value, { stream: true });
 
+      // Process complete SSE messages (separated by double newlines)
+      const messages = buffer.split('\n\n');
+
+      // Keep the last incomplete message in the buffer
+      buffer = messages.pop() || '';
+
+      for (const message of messages) {
+        const lines = message.split('\n');
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = line.slice(6);
+            try {
+              const event = JSON.parse(data);
+              onEvent(event.type, event);
+            } catch (e) {
+              console.error('Failed to parse SSE event:', e, 'Raw data:', data.substring(0, 200) + '...');
+            }
+          }
+        }
+      }
+    }
+
+    // Process any remaining data in buffer
+    if (buffer.trim()) {
+      const lines = buffer.split('\n');
       for (const line of lines) {
         if (line.startsWith('data: ')) {
           const data = line.slice(6);
@@ -286,7 +312,7 @@ export const api = {
             const event = JSON.parse(data);
             onEvent(event.type, event);
           } catch (e) {
-            console.error('Failed to parse SSE event:', e, 'Raw data:', data);
+            console.error('Failed to parse final SSE event:', e);
           }
         }
       }
@@ -338,7 +364,7 @@ export const api = {
    */
   async listPresets() {
     const response = await fetch(`${API_BASE}/api/presets`, {
-      headers: getHeaders(false),
+      headers: await getHeaders(false),
     });
     return handleResponse(response);
   },
@@ -366,7 +392,7 @@ export const api = {
   async deletePreset(presetId) {
     const response = await fetch(`${API_BASE}/api/presets/${presetId}`, {
       method: 'DELETE',
-      headers: getHeaders(false),
+      headers: await getHeaders(false),
     });
     return handleResponse(response);
   },
@@ -382,7 +408,7 @@ export const api = {
     const response = await fetch(
       `${API_BASE}/api/search?q=${encodeURIComponent(query)}&limit=${limit}`,
       {
-        headers: getHeaders(false),
+        headers: await getHeaders(false),
       }
     );
     return handleResponse(response);
@@ -433,7 +459,7 @@ export const api = {
    */
   async getPredictionStats() {
     const response = await fetch(`${API_BASE}/api/predictions/stats`, {
-      headers: getHeaders(false),
+      headers: await getHeaders(false),
     });
     return handleResponse(response);
   },

@@ -18,6 +18,14 @@ export default function ChatInterface({
   const [input, setInput] = useState('');
   const messagesEndRef = useRef(null);
 
+  // Check if any message has stage-specific loading (to avoid duplicate spinners)
+  const hasStageLoading = conversation?.messages?.some(msg =>
+    msg.loading && Object.values(msg.loading).some(Boolean)
+  );
+
+  // Show default spinner only when loading AND no stage-specific spinners are active
+  const showDefaultSpinner = isLoading && !hasStageLoading;
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
@@ -176,7 +184,7 @@ export default function ChatInterface({
           ))
         )}
 
-        {isLoading && (
+        {showDefaultSpinner && (
           <div className="loading-indicator">
             <div className="spinner"></div>
             <span>Consulting the council...</span>
