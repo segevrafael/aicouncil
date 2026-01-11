@@ -6,7 +6,16 @@ import jwt
 import requests
 from fastapi import HTTPException, Depends, Header
 from typing import Optional
-from jwt import PyJWK
+
+# Try to import PyJWK for ES256 support (requires cryptography)
+try:
+    from jwt import PyJWK
+    HAS_CRYPTO = True
+except ImportError as e:
+    print(f"[AUTH] PyJWK/cryptography not available: {e}")
+    print("[AUTH] ES256 tokens will not be supported, falling back to HS256 only")
+    HAS_CRYPTO = False
+    PyJWK = None
 
 # Supabase JWT configuration
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")
@@ -67,6 +76,10 @@ def fetch_jwks():
 
 def get_signing_key_from_jwks(token: str):
     """Get the signing key for a JWT token from JWKS."""
+    if not HAS_CRYPTO:
+        print("[AUTH DEBUG] Cryptography not available, cannot verify ES256 tokens")
+        return None
+
     jwks = fetch_jwks()
     if not jwks:
         return None
