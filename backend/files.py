@@ -156,12 +156,11 @@ def extract_text(filename: str, content: bytes) -> Optional[str]:
 
     if category == "pdf":
         try:
-            import pymupdf
-            doc = pymupdf.open(stream=content, filetype="pdf")
+            from pypdf import PdfReader
+            reader = PdfReader(io.BytesIO(content))
             text_parts = []
-            for page in doc:
-                text_parts.append(page.get_text())
-            doc.close()
+            for page in reader.pages:
+                text_parts.append(page.extract_text() or "")
             return "\n".join(text_parts)
         except Exception as e:
             print(f"PDF extraction error: {e}")
