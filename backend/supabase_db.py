@@ -58,6 +58,14 @@ def create_session(
             headers=_get_headers(),
             json=data
         )
+        # If 400 error and we included user_id, retry without it (column may not exist)
+        if response.status_code == 400 and user_id:
+            del data["user_id"]
+            response = client.post(
+                _rest_url("sessions"),
+                headers=_get_headers(),
+                json=data
+            )
         response.raise_for_status()
         result = response.json()
         return result[0] if isinstance(result, list) and result else result
@@ -126,6 +134,14 @@ def list_sessions(limit: int = 50, offset: int = 0, include_archived: bool = Fal
             headers=_get_headers(),
             params=params
         )
+        # If 400 error and we filtered by user_id, retry without it (column may not exist)
+        if response.status_code == 400 and user_id:
+            del params["user_id"]
+            response = client.get(
+                _rest_url("sessions"),
+                headers=_get_headers(),
+                params=params
+            )
         response.raise_for_status()
         sessions = response.json() or []
 

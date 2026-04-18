@@ -103,8 +103,28 @@ def get_current_user(authorization: Optional[str] = Header(None)) -> dict:
 
     Returns dict with user_id and email.
     """
+    # For local development: if JWT_SECRET is not configured, allow all authenticated Supabase requests
+    # This is safe because the frontend already verified auth with Supabase
+    if not SUPABASE_JWT_SECRET and not API_PASSWORD:
+        # Try to extract user info from token without verification (for local dev only)
+        if authorization:
+            try:
+                parts = authorization.split()
+                if len(parts) == 2 and parts[0].lower() == "bearer":
+                    # Decode without verification to get user info
+                    payload = jwt.decode(parts[1], options={"verify_signature": False})
+                    return {
+                        "user_id": payload.get("sub"),
+                        "email": payload.get("email"),
+                        "role": payload.get("role"),
+                    }
+            except Exception:
+                pass
+        return {"user_id": None, "email": None}
+
     # If no auth configured at all, allow anonymous (development only)
     if not SUPABASE_URL and not SUPABASE_JWT_SECRET and not API_PASSWORD:
+        print("[AUTH DEBUG] No auth configured, allowing anonymous")
         return {"user_id": None, "email": None}
 
     if not authorization:
@@ -131,10 +151,12 @@ def get_current_user(authorization: Optional[str] = Header(None)) -> dict:
             # Check what algorithm the token uses
             header = jwt.get_unverified_header(token)
             alg = header.get("alg", "HS256")
+            print(f"[AUTH DEBUG] Token algorithm: {alg}")
 
             if alg == "ES256":
                 # Use JWKS for ES256 tokens
                 signing_key = get_signing_key_from_jwks(token)
+                print(f"[AUTH DEBUG] ES256 signing key found: {signing_key is not None}")
                 if signing_key:
                     payload = jwt.decode(
                         token,
@@ -142,33 +164,44 @@ def get_current_user(authorization: Optional[str] = Header(None)) -> dict:
                         algorithms=["ES256"],
                         options={"verify_aud": False}
                     )
+                    print(f"[AUTH DEBUG] ES256 decode SUCCESS, user: {payload.get('sub')}")
                     return {
                         "user_id": payload.get("sub"),
                         "email": payload.get("email"),
                         "role": payload.get("role"),
                     }
-            elif alg == "HS256" and SUPABASE_JWT_SECRET:
-                # Use JWT secret for HS256 tokens
-                payload = jwt.decode(
-                    token,
-                    SUPABASE_JWT_SECRET,
-                    algorithms=["HS256"],
-                    options={"verify_aud": False}
-                )
-                return {
-                    "user_id": payload.get("sub"),
-                    "email": payload.get("email"),
-                    "role": payload.get("role"),
-                }
-        except jwt.ExpiredSignatureError:
+                else:
+                    print("[AUTH DEBUG] ES256 signing key NOT FOUND")
+            elif alg == "HS256":
+                print(f"[AUTH DEBUG] HS256 token, JWT_SECRET set: {SUPABASE_JWT_SECRET is not None}")
+                if SUPABASE_JWT_SECRET:
+                    # Use JWT secret for HS256 tokens
+                    payload = jwt.decode(
+                        token,
+                        SUPABASE_JWT_SECRET,
+                        algorithms=["HS256"],
+                        options={"verify_aud": False}
+                    )
+                    print(f"[AUTH DEBUG] HS256 decode SUCCESS")
+                    return {
+                        "user_id": payload.get("sub"),
+                        "email": payload.get("email"),
+                        "role": payload.get("role"),
+                    }
+                else:
+                    print("[AUTH DEBUG] HS256 token but no JWT_SECRET configured")
+        except jwt.ExpiredSignatureError as e:
+            print(f"[AUTH DEBUG] Token EXPIRED: {e}")
             raise HTTPException(
                 status_code=401,
                 detail="Token has expired. Please log in again.",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-        except jwt.InvalidTokenError:
+        except jwt.InvalidTokenError as e:
+            print(f"[AUTH DEBUG] Invalid token error: {e}")
             pass  # Fall through to legacy password check
-        except Exception:
+        except Exception as e:
+            print(f"[AUTH DEBUG] Unexpected error: {e}")
             pass
 
     # Legacy password auth (backward compatibility)

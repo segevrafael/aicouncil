@@ -8,6 +8,7 @@ export default function Sidebar({
   onSelectConversation,
   onNewConversation,
   onArchiveConversation,
+  onDeleteConversation,
   onLogout,
   showArchived,
   onToggleShowArchived,
@@ -61,14 +62,27 @@ export default function Sidebar({
                       {isLoading ? 'Processing...' : `${conv.message_count} messages`}
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    className="archive-btn"
-                    onClick={(e) => handleArchive(e, conv.id, conv.is_archived)}
-                    title="Archive conversation"
-                  >
-                    📦
-                  </button>
+                  <div className="conversation-actions">
+                    <button
+                      type="button"
+                      className="archive-btn"
+                      onClick={(e) => handleArchive(e, conv.id, conv.is_archived)}
+                      title="Archive conversation"
+                    >
+                      📦
+                    </button>
+                    <button
+                      type="button"
+                      className="delete-btn"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDeleteConversation(conv.id);
+                      }}
+                      title="Delete conversation"
+                    >
+                      🗑
+                    </button>
+                  </div>
                 </div>
               );
             })}
@@ -102,14 +116,27 @@ export default function Sidebar({
                             {conv.message_count} messages
                           </div>
                         </div>
-                        <button
-                          type="button"
-                          className="archive-btn unarchive"
-                          onClick={(e) => handleArchive(e, conv.id, conv.is_archived)}
-                          title="Unarchive conversation"
-                        >
-                          📤
-                        </button>
+                        <div className="conversation-actions">
+                          <button
+                            type="button"
+                            className="archive-btn unarchive"
+                            onClick={(e) => handleArchive(e, conv.id, conv.is_archived)}
+                            title="Unarchive conversation"
+                          >
+                            📤
+                          </button>
+                          <button
+                            type="button"
+                            className="delete-btn"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onDeleteConversation(conv.id);
+                            }}
+                            title="Delete conversation"
+                          >
+                            🗑
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>

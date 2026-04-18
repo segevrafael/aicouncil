@@ -79,6 +79,16 @@
   border-color: #f59e0b;
 }
 
+.confirm-dialog-btn.danger {
+  background: #ef4444;
+  border-color: #ef4444;
+}
+
+.confirm-dialog-btn.danger:hover {
+  background: #dc2626;
+  border-color: #dc2626;
+}
+
 .confirm-dialog-cancel {
   width: 100%;
   padding: 10px 16px;

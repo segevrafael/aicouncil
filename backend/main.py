@@ -1,7 +1,7 @@
 """FastAPI backend for LLM Council."""
 
 import os
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
@@ -32,6 +32,7 @@ from .council import (
 from .models_api import get_models_for_picker, clear_cache as clear_models_cache
 from . import supabase_db as db
 from .auth import require_auth
+from . import files as file_handler
 from .config import (
     COUNCIL_MODES,
     COUNCIL_TYPES,
@@ -79,6 +80,8 @@ class SendMessageRequest(BaseModel):
     chairman_model: Optional[str] = Field(default=None, description="Override chairman model for synthesis")
     roles_enabled: bool = Field(default=False, description="Enable specialist roles (Optimist, Skeptic, etc.)")
     enhancements: List[str] = Field(default=[], description="Output enhancements: decision_matrix|confidence|followup_questions")
+    web_search: bool = Field(default=False, description="Enable web search for models via OpenRouter plugin")
+    attachments: List[Dict[str, Any]] = Field(default=[], description="File attachments (from upload endpoint)")
 
 
 class ContinueDebateRequest(BaseModel):
@@ -315,10 +318,15 @@ async def get_conversation(conversation_id: str, _: None = Depends(require_auth)
 
 @app.delete("/api/conversations/{conversation_id}")
 async def delete_conversation(conversation_id: str, _: None = Depends(require_auth)):
-    """Delete a conversation."""
+    """Delete a conversation and its attached files."""
     deleted = db.delete_session(conversation_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Conversation not found")
+    # Clean up any attached files from storage
+    try:
+        file_handler.delete_session_files(conversation_id)
+    except Exception:
+        pass  # Don't fail the delete if file cleanup fails
     return {"status": "deleted", "id": conversation_id}
 
 
@@ -340,6 +348,47 @@ async def toggle_archive(conversation_id: str, request: ArchiveRequest, _: None 
         "is_archived": request.is_archived,
         "status": "archived" if request.is_archived else "unarchived"
     }
+
+
+# =============================================================================
+# FILE UPLOAD ENDPOINTS
+# =============================================================================
+
+@app.post("/api/conversations/{conversation_id}/upload")
+async def upload_file(
+    conversation_id: str,
+    file: UploadFile = File(...),
+    _: None = Depends(require_auth),
+):
+    """Upload a file attachment for a conversation."""
+    session = db.get_session(conversation_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    # Validate file extension
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    if ext not in file_handler.ALL_SUPPORTED:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file type '{ext}'. Supported: images, PDF, DOCX, XLSX, text files."
+        )
+
+    # Read and upload
+    content = await file.read()
+    if len(content) > 20 * 1024 * 1024:  # 20MB limit
+        raise HTTPException(status_code=400, detail="File too large. Maximum size is 20MB.")
+
+    try:
+        file_handler.ensure_bucket()
+        result = file_handler.upload_file(
+            conversation_id,
+            file.filename,
+            content,
+            file.content_type or "application/octet-stream",
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
 
 
 # =============================================================================
@@ -397,7 +446,9 @@ async def send_message(conversation_id: str, request: SendMessageRequest, _: Non
             request.models,
             request.council_type,
             request.roles_enabled,
-            request.enhancements
+            request.enhancements,
+            web_search=request.web_search,
+            attachments=request.attachments or None
         )
         # Save assistant message with stage data
         db.add_message(
@@ -417,7 +468,9 @@ async def send_message(conversation_id: str, request: SendMessageRequest, _: Non
             request.chairman_model,
             request.council_type,
             request.roles_enabled,
-            request.enhancements
+            request.enhancements,
+            web_search=request.web_search,
+            attachments=request.attachments or None
         )
         # Save complete response
         db.add_message(
@@ -446,7 +499,8 @@ async def send_message(conversation_id: str, request: SendMessageRequest, _: Non
             1,
             request.models,
             request.council_type,
-            request.roles_enabled
+            request.roles_enabled,
+            web_search=request.web_search
         )
 
         # Store debate state in database for serverless compatibility
@@ -488,7 +542,9 @@ async def send_message(conversation_id: str, request: SendMessageRequest, _: Non
             responders,
             request.council_type,
             request.roles_enabled,
-            request.enhancements
+            request.enhancements,
+            web_search=request.web_search,
+            attachments=request.attachments or None
         )
 
         # Build context for devil's advocate
@@ -512,7 +568,7 @@ You are the Devil's Advocate. Your job is to:
 Provide your critique:"""
 
         from .openrouter import query_model
-        critique_response = await query_model(devils_advocate, [{"role": "user", "content": devils_advocate_prompt}])
+        critique_response = await query_model(devils_advocate, [{"role": "user", "content": devils_advocate_prompt}], web_search=request.web_search)
 
         critique = {
             "model": devils_advocate,
@@ -541,7 +597,8 @@ Provide your critique:"""
             request.content,
             request.models,
             request.council_type,
-            request.roles_enabled
+            request.roles_enabled,
+            web_search=request.web_search
         )
 
         # Store state in database for serverless compatibility
@@ -573,7 +630,8 @@ Provide your critique:"""
             request.content,
             request.models,
             request.chairman_model,
-            request.council_type
+            request.council_type,
+            web_search=request.web_search
         )
 
         db.add_message(
@@ -599,7 +657,9 @@ Provide your critique:"""
             request.chairman_model,
             request.council_type,
             request.roles_enabled,
-            request.enhancements
+            request.enhancements,
+            web_search=request.web_search,
+            attachments=request.attachments or None
         )
         db.add_message(
             conversation_id, "assistant",
@@ -657,7 +717,9 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest,
                     request.models,
                     request.council_type,
                     request.roles_enabled,
-                    request.enhancements
+                    request.enhancements,
+                    web_search=request.web_search,
+                    attachments=request.attachments or None
                 ):
                     stage1_results.append(result)
                     yield f"data: {json.dumps({'type': 'stage1_model_complete', 'data': result})}\n\n"
@@ -679,7 +741,8 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest,
                     1,
                     request.models,
                     request.council_type,
-                    request.roles_enabled
+                    request.roles_enabled,
+                    web_search=request.web_search
                 ):
                     round1_responses.append(result)
                     yield f"data: {json.dumps({'type': 'stage1_model_complete', 'data': result})}\n\n"
@@ -719,7 +782,9 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest,
                     responders,
                     request.council_type,
                     request.roles_enabled,
-                    request.enhancements
+                    request.enhancements,
+                    web_search=request.web_search,
+                    attachments=request.attachments or None
                 ):
                     initial_responses.append(result)
                     yield f"data: {json.dumps({'type': 'stage1_model_complete', 'data': result})}\n\n"
@@ -747,7 +812,7 @@ Provide your critique:"""
 
                 yield f"data: {json.dumps({'type': 'critique_start'})}\n\n"
                 from .openrouter import query_model
-                critique_response = await query_model(devils_advocate, [{"role": "user", "content": devils_advocate_prompt}])
+                critique_response = await query_model(devils_advocate, [{"role": "user", "content": devils_advocate_prompt}], web_search=request.web_search)
 
                 critique = {
                     "model": devils_advocate,
@@ -774,7 +839,8 @@ Provide your critique:"""
                     request.content,
                     request.models,
                     request.council_type,
-                    request.roles_enabled
+                    request.roles_enabled,
+                    web_search=request.web_search
                 ):
                     questions.append(result)
                     yield f"data: {json.dumps({'type': 'questions_model_complete', 'data': result})}\n\n"
@@ -805,7 +871,8 @@ Provide your critique:"""
                 async for result in scenario_planning_streaming(
                     request.content,
                     request.models,
-                    request.council_type
+                    request.council_type,
+                    web_search=request.web_search
                 ):
                     scenario_results.append(result)
                     yield f"data: {json.dumps({'type': 'scenario_model_complete', 'data': result})}\n\n"
@@ -840,7 +907,9 @@ Provide your critique:"""
                     request.models,
                     request.council_type,
                     request.roles_enabled,
-                    request.enhancements
+                    request.enhancements,
+                    web_search=request.web_search,
+                    attachments=request.attachments or None
                 ):
                     stage1_results.append(result)
                     yield f"data: {json.dumps({'type': 'stage1_model_complete', 'data': result})}\n\n"

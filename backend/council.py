@@ -2,6 +2,7 @@
 
 from typing import List, Dict, Any, Tuple, Optional, AsyncGenerator
 from .openrouter import query_models_parallel, query_models_streaming, query_model
+from .files import build_message_content
 from .config import (
     DEFAULT_COUNCIL_MODELS,
     DEFAULT_CHAIRMAN_MODEL,
@@ -87,7 +88,9 @@ async def stage1_collect_responses(
     models: Optional[List[str]] = None,
     council_type: str = "general",
     roles_enabled: bool = False,
-    enhancements: Optional[List[str]] = None
+    enhancements: Optional[List[str]] = None,
+    web_search: bool = False,
+    attachments: Optional[List[Dict[str, Any]]] = None
 ) -> List[Dict[str, Any]]:
     """
     Stage 1: Collect individual responses from all council models.
@@ -98,11 +101,17 @@ async def stage1_collect_responses(
         council_type: Council type for system prompt
         roles_enabled: Whether to use specialist roles
         enhancements: List of enhancement keys
+        attachments: Optional file attachments
 
     Returns:
         List of dicts with 'model', 'response', 'role' keys
     """
     models = models or DEFAULT_COUNCIL_MODELS
+
+    # Build user message content (may include file data)
+    user_content = user_query
+    if attachments:
+        user_content = build_message_content(user_query, attachments)
 
     # Build messages with role-specific system prompts
     model_messages = {}
@@ -115,11 +124,11 @@ async def stage1_collect_responses(
         system_prompt = build_system_prompt(council_type, role, enhancements)
         model_messages[model] = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_query}
+            {"role": "user", "content": user_content}
         ]
 
     # Query all models in parallel
-    responses = await query_models_parallel(models, model_messages)
+    responses = await query_models_parallel(models, model_messages, web_search=web_search)
 
     # Format results
     stage1_results = []
@@ -144,7 +153,9 @@ async def stage1_collect_responses_streaming(
     models: Optional[List[str]] = None,
     council_type: str = "general",
     roles_enabled: bool = False,
-    enhancements: Optional[List[str]] = None
+    enhancements: Optional[List[str]] = None,
+    web_search: bool = False,
+    attachments: Optional[List[Dict[str, Any]]] = None
 ) -> AsyncGenerator[Dict[str, Any], None]:
     """
     Stage 1: Collect individual responses, yielding each as it completes.
@@ -155,11 +166,17 @@ async def stage1_collect_responses_streaming(
         council_type: Council type for system prompt
         roles_enabled: Whether to use specialist roles
         enhancements: List of enhancement keys
+        attachments: Optional file attachments
 
     Yields:
         Dict with 'model', 'response', 'role' keys as each model completes
     """
     models = models or DEFAULT_COUNCIL_MODELS
+
+    # Build user message content (may include file data)
+    user_content = user_query
+    if attachments:
+        user_content = build_message_content(user_query, attachments)
 
     # Build messages with role-specific system prompts
     model_messages = {}
@@ -172,11 +189,11 @@ async def stage1_collect_responses_streaming(
         system_prompt = build_system_prompt(council_type, role, enhancements)
         model_messages[model] = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_query}
+            {"role": "user", "content": user_content}
         ]
 
     # Stream results as each model completes
-    async for model, response in query_models_streaming(models, model_messages):
+    async for model, response in query_models_streaming(models, model_messages, web_search=web_search):
         role = model_roles.get(model)
         if response is not None:
             result = {
@@ -462,7 +479,8 @@ async def debate_round(
     models: Optional[List[str]] = None,
     council_type: str = "general",
     roles_enabled: bool = False,
-    user_clarification: Optional[str] = None
+    user_clarification: Optional[str] = None,
+    web_search: bool = False
 ) -> List[Dict[str, Any]]:
     """
     Execute a single round of debate.
@@ -487,7 +505,7 @@ async def debate_round(
     if round_number == 1:
         # First round: independent responses
         return await stage1_collect_responses(
-            user_query, models, council_type, roles_enabled
+            user_query, models, council_type, roles_enabled, web_search=web_search
         )
 
     # Build context from previous responses
@@ -537,7 +555,7 @@ Your response for round {round_number}:"""
             {"role": "user", "content": debate_prompt}
         ]
 
-    responses = await query_models_parallel(models, model_messages)
+    responses = await query_models_parallel(models, model_messages, web_search=web_search)
 
     results = []
     for model, response in responses.items():
@@ -564,7 +582,8 @@ async def debate_round_streaming(
     models: Optional[List[str]] = None,
     council_type: str = "general",
     roles_enabled: bool = False,
-    user_clarification: Optional[str] = None
+    user_clarification: Optional[str] = None,
+    web_search: bool = False
 ):
     """
     Streaming version of debate_round - yields results as each model completes.
@@ -574,7 +593,7 @@ async def debate_round_streaming(
     if round_number == 1:
         # First round: use streaming stage1
         async for result in stage1_collect_responses_streaming(
-            user_query, models, council_type, roles_enabled
+            user_query, models, council_type, roles_enabled, web_search=web_search
         ):
             result["round"] = round_number
             yield result
@@ -627,7 +646,7 @@ Your response for round {round_number}:"""
             {"role": "user", "content": debate_prompt}
         ]
 
-    async for model, response in query_models_streaming(models, model_messages):
+    async for model, response in query_models_streaming(models, model_messages, web_search=web_search):
         role = model_roles.get(model)
         if response is not None:
             result = {
@@ -725,7 +744,8 @@ async def socratic_questions(
     user_query: str,
     models: Optional[List[str]] = None,
     council_type: str = "general",
-    roles_enabled: bool = False
+    roles_enabled: bool = False,
+    web_search: bool = False
 ) -> List[Dict[str, Any]]:
     """
     Socratic mode: Council asks probing questions instead of giving answers.
@@ -770,7 +790,7 @@ Your probing questions:"""
             {"role": "user", "content": socratic_prompt}
         ]
 
-    responses = await query_models_parallel(models, model_messages)
+    responses = await query_models_parallel(models, model_messages, web_search=web_search)
 
     results = []
     for model, response in responses.items():
@@ -794,7 +814,8 @@ async def socratic_questions_streaming(
     user_query: str,
     models: Optional[List[str]] = None,
     council_type: str = "general",
-    roles_enabled: bool = False
+    roles_enabled: bool = False,
+    web_search: bool = False
 ):
     """
     Streaming version of socratic_questions - yields results as each model completes.
@@ -830,7 +851,7 @@ Your probing questions:"""
             {"role": "user", "content": socratic_prompt}
         ]
 
-    async for model, response in query_models_streaming(models, model_messages):
+    async for model, response in query_models_streaming(models, model_messages, web_search=web_search):
         role = model_roles.get(model)
         if response is not None:
             result = {
@@ -866,7 +887,8 @@ async def scenario_planning(
     user_query: str,
     models: Optional[List[str]] = None,
     chairman_model: Optional[str] = None,
-    council_type: str = "general"
+    council_type: str = "general",
+    web_search: bool = False
 ) -> Dict[str, Any]:
     """
     Scenario planning mode: Each model generates a scenario, then synthesis.
@@ -908,7 +930,7 @@ Be concrete and actionable in your scenario planning.
 Your {scenario_type} scenario:"""
 
         messages = [{"role": "user", "content": scenario_prompt}]
-        response = await query_model(model, messages)
+        response = await query_model(model, messages, web_search=web_search)
 
         if response:
             scenario_results.append({
@@ -955,7 +977,8 @@ Your synthesis:"""
 async def scenario_planning_streaming(
     user_query: str,
     models: Optional[List[str]] = None,
-    council_type: str = "general"
+    council_type: str = "general",
+    web_search: bool = False
 ):
     """
     Streaming version of scenario_planning - yields scenario results as each model completes.
@@ -992,7 +1015,7 @@ Your {scenario_type} scenario:"""
 
         model_messages[model] = [{"role": "user", "content": scenario_prompt}]
 
-    async for model, response in query_models_streaming(models_to_query, model_messages):
+    async for model, response in query_models_streaming(models_to_query, model_messages, web_search=web_search):
         scenario_type = model_scenario_types.get(model, "alternative")
         if response is not None:
             yield {
@@ -1152,7 +1175,9 @@ async def run_full_council(
     chairman_model: Optional[str] = None,
     council_type: str = "general",
     roles_enabled: bool = False,
-    enhancements: Optional[List[str]] = None
+    enhancements: Optional[List[str]] = None,
+    web_search: bool = False,
+    attachments: Optional[List[Dict[str, Any]]] = None
 ) -> Tuple[List, List, Dict, Dict]:
     """
     Run the complete 3-stage council process (synthesized mode).
@@ -1170,7 +1195,8 @@ async def run_full_council(
     """
     # Stage 1: Collect individual responses
     stage1_results = await stage1_collect_responses(
-        user_query, models, council_type, roles_enabled, enhancements
+        user_query, models, council_type, roles_enabled, enhancements,
+        web_search=web_search, attachments=attachments
     )
 
     if not stage1_results:

@@ -8,7 +8,8 @@ from .config import OPENROUTER_API_KEY, OPENROUTER_API_URL
 async def query_model(
     model: str,
     messages: List[Dict[str, str]],
-    timeout: float = 120.0
+    timeout: float = 120.0,
+    web_search: bool = False
 ) -> Optional[Dict[str, Any]]:
     """
     Query a single model via OpenRouter API.
@@ -17,6 +18,7 @@ async def query_model(
         model: OpenRouter model identifier (e.g., "openai/gpt-4o")
         messages: List of message dicts with 'role' and 'content'
         timeout: Request timeout in seconds
+        web_search: Whether to enable web search via OpenRouter plugin
 
     Returns:
         Response dict with 'content' and optional 'reasoning_details', or None if failed
@@ -30,6 +32,9 @@ async def query_model(
         "model": model,
         "messages": messages,
     }
+
+    if web_search:
+        payload["plugins"] = [{"id": "web"}]
 
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
@@ -56,7 +61,8 @@ async def query_model(
 async def query_models_parallel(
     models: List[str],
     messages_or_dict,
-    timeout: float = 90.0
+    timeout: float = 90.0,
+    web_search: bool = False
 ) -> Dict[str, Optional[Dict[str, Any]]]:
     """
     Query multiple models in parallel.
@@ -67,6 +73,7 @@ async def query_models_parallel(
             - List of message dicts to send to ALL models (broadcast)
             - Dict mapping model ID to its specific message list (per-model)
         timeout: Per-model timeout in seconds
+        web_search: Whether to enable web search via OpenRouter plugin
 
     Returns:
         Dict mapping model identifier to response dict (or None if failed)
@@ -76,10 +83,10 @@ async def query_models_parallel(
     # Determine if we have per-model messages or broadcast
     if isinstance(messages_or_dict, dict):
         # Per-model messages: each model gets its own message list
-        tasks = [query_model(model, messages_or_dict.get(model, []), timeout=timeout) for model in models]
+        tasks = [query_model(model, messages_or_dict.get(model, []), timeout=timeout, web_search=web_search) for model in models]
     else:
         # Broadcast: same messages to all models
-        tasks = [query_model(model, messages_or_dict, timeout=timeout) for model in models]
+        tasks = [query_model(model, messages_or_dict, timeout=timeout, web_search=web_search) for model in models]
 
     # Wait for all to complete
     responses = await asyncio.gather(*tasks)
@@ -91,7 +98,8 @@ async def query_models_parallel(
 async def query_models_streaming(
     models: List[str],
     messages_or_dict,
-    timeout: float = 90.0
+    timeout: float = 90.0,
+    web_search: bool = False
 ):
     """
     Query multiple models in parallel, yielding results as each completes.
@@ -102,6 +110,7 @@ async def query_models_streaming(
             - List of message dicts to send to ALL models (broadcast)
             - Dict mapping model ID to its specific message list (per-model)
         timeout: Per-model timeout in seconds
+        web_search: Whether to enable web search via OpenRouter plugin
 
     Yields:
         Tuple of (model_id, response_dict or None) as each model completes
@@ -110,7 +119,7 @@ async def query_models_streaming(
 
     # Create tasks with model tracking
     async def query_with_id(model: str, messages: List[Dict[str, str]]):
-        result = await query_model(model, messages, timeout=timeout)
+        result = await query_model(model, messages, timeout=timeout, web_search=web_search)
         return (model, result)
 
     # Determine if we have per-model messages or broadcast

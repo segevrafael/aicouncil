@@ -21,13 +21,13 @@ DATABASE_PATH = "data/council.db"
 # =============================================================================
 
 DEFAULT_COUNCIL_MODELS = [
-    "openai/gpt-5.2",
-    "anthropic/claude-opus-4.5",
-    "google/gemini-3-pro-preview",
-    "x-ai/grok-4",
+    "openai/gpt-5.4",
+    "anthropic/claude-opus-4.6",
+    "google/gemini-3.1-pro-preview",
+    "x-ai/grok-4.20",
 ]
 
-DEFAULT_CHAIRMAN_MODEL = "anthropic/claude-opus-4.5"
+DEFAULT_CHAIRMAN_MODEL = "anthropic/claude-opus-4.6"
 
 
 # =============================================================================
@@ -106,10 +106,10 @@ SPECIALIST_ROLES = {
 
 # Default role assignments for each model (when roles are enabled)
 DEFAULT_ROLE_ASSIGNMENTS = {
-    "openai/gpt-5.2": "optimist",
-    "anthropic/claude-opus-4.5": "pragmatist",
+    "openai/gpt-5.4": "optimist",
+    "anthropic/claude-opus-4.6": "pragmatist",
     "google/gemini-3-pro-preview": "skeptic",
-    "x-ai/grok-4": "innovator",
+    "x-ai/grok-4.20": "innovator",
 }
 
 # =============================================================================

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { markdownComponents } from '../markdownConfig.jsx';
 import './Stage1.css';
 
 export default function Stage1({ responses, title, expectedModels, isLoading }) {
@@ -97,7 +98,7 @@ export default function Stage1({ responses, title, expectedModels, isLoading }) 
             <>
               <div className="model-name">{responses[activeTab].model}</div>
               <div className="response-text markdown-content fade-in">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{responses[activeTab].response}</ReactMarkdown>
+                <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>{responses[activeTab].response}</ReactMarkdown>
               </div>
             </>
           )

@@ -190,6 +190,18 @@
   color: #a855f7;
 }
 
+/* Web Search Section */
+.web-search-section {
+  margin-bottom: 16px;
+}
+
+.web-search-hint {
+  font-size: 11px;
+  color: var(--text-secondary, #888);
+  margin: 4px 0 0 24px;
+  line-height: 1.4;
+}
+
 /* Enhancements Section */
 .enhancements-section {
   margin-bottom: 8px;

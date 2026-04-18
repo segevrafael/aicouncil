@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { markdownComponents } from '../markdownConfig.jsx';
 import Stage1 from './Stage1';
 import Stage2 from './Stage2';
 import Stage3 from './Stage3';
@@ -10,12 +11,16 @@ export default function ChatInterface({
   conversation,
   onSendMessage,
   isLoading,
+  queueLength = 0,
   selectedMode,
   conversationState,
 }) {
   // Hide main input when Socratic mode is active (uses dedicated input in DebateControls)
   const hideChatInput = conversationState?.has_active_session && conversationState?.mode === 'socratic';
   const [input, setInput] = useState('');
+  const [attachedFiles, setAttachedFiles] = useState([]);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef(null);
   const messagesEndRef = useRef(null);
 
   // Check if any message has stage-specific loading (to avoid duplicate spinners)
@@ -36,10 +41,30 @@ export default function ChatInterface({
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (input.trim() && !isLoading) {
-      onSendMessage(input);
+    if (input.trim() || attachedFiles.length > 0) {
+      onSendMessage(input, attachedFiles.length > 0 ? attachedFiles : undefined);
       setInput('');
+      setAttachedFiles([]);
     }
+  };
+
+  const handleFileSelect = (e) => {
+    const files = Array.from(e.target.files || []);
+    for (const file of files) {
+      const preview = file.type.startsWith('image/') ? URL.createObjectURL(file) : null;
+      setAttachedFiles(prev => [...prev, { file, preview, name: file.name }]);
+    }
+    // Reset input so selecting the same file again works
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const removeFile = (index) => {
+    setAttachedFiles(prev => {
+      const updated = [...prev];
+      if (updated[index].preview) URL.revokeObjectURL(updated[index].preview);
+      updated.splice(index, 1);
+      return updated;
+    });
   };
 
   const handleKeyDown = (e) => {
@@ -77,7 +102,7 @@ export default function ChatInterface({
                   <div className="message-label">You</div>
                   <div className="message-content">
                     <div className="markdown-content">
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+                      <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>{msg.content}</ReactMarkdown>
                     </div>
                   </div>
                 </div>
@@ -133,7 +158,7 @@ export default function ChatInterface({
                       <div className="critique-content">
                         <div className="model-name">{msg.critique.model_name || msg.critique.model}</div>
                         <div className="response-text markdown-content">
-                          <ReactMarkdown>{msg.critique.response}</ReactMarkdown>
+                          <ReactMarkdown components={markdownComponents}>{msg.critique.response}</ReactMarkdown>
                         </div>
                       </div>
                     </div>
@@ -176,24 +201,59 @@ export default function ChatInterface({
 
       {!hideChatInput && (
         <form className="input-form" onSubmit={handleSubmit} autoComplete="off">
-          <textarea
-            className="message-input"
-            placeholder="Ask your question... (Shift+Enter for new line, Enter to send)"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            disabled={isLoading}
-            rows={3}
-            autoComplete="off"
-            data-form-type="other"
-          />
-          <button
-            type="submit"
-            className="send-button"
-            disabled={!input.trim() || isLoading}
-          >
-            Send
-          </button>
+          {attachedFiles.length > 0 && (
+            <div className="attached-files">
+              {attachedFiles.map((af, i) => (
+                <div key={i} className="attached-file">
+                  {af.preview ? (
+                    <img src={af.preview} alt={af.name} className="attached-file-thumb" />
+                  ) : (
+                    <span className="attached-file-icon">
+                      {af.name.match(/\.pdf$/i) ? 'PDF' : af.name.match(/\.docx?$/i) ? 'DOC' : af.name.match(/\.xlsx?$/i) ? 'XLS' : 'FILE'}
+                    </span>
+                  )}
+                  <span className="attached-file-name">{af.name}</span>
+                  <button type="button" className="attached-file-remove" onClick={() => removeFile(i)}>x</button>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="input-row">
+            <button
+              type="button"
+              className="attach-button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+              title="Attach file"
+            >
+              +
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept="image/*,.pdf,.docx,.xlsx,.txt,.md,.csv,.json,.xml,.html,.py,.js,.ts,.jsx,.tsx,.css,.sql,.sh,.yaml,.yml"
+              onChange={handleFileSelect}
+              style={{ display: 'none' }}
+            />
+            <textarea
+              className="message-input"
+              placeholder={isLoading ? "Type your next question — it will be sent when the current response completes..." : "Ask your question... (Shift+Enter for new line, Enter to send)"}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              rows={3}
+              autoComplete="off"
+              data-form-type="other"
+            />
+            <button
+              type="submit"
+              className="send-button"
+              disabled={!input.trim() && attachedFiles.length === 0}
+            >
+              {isLoading ? `Queue${queueLength > 0 ? ` (${queueLength})` : ''}` : 'Send'}
+            </button>
+          </div>
         </form>
       )}
     </div>

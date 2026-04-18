@@ -19,10 +19,12 @@ export default function ModeSelector({
   selectedCouncilType,
   rolesEnabled,
   selectedEnhancements,
+  webSearchEnabled,
   onModeChange,
   onCouncilTypeChange,
   onRolesToggle,
   onEnhancementsChange,
+  onWebSearchToggle,
   disabled,
 }) {
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -106,6 +108,22 @@ export default function ModeSelector({
                 ))}
               </div>
             )}
+          </div>
+
+          {/* Web Search Toggle */}
+          <div className="web-search-section">
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={webSearchEnabled}
+                onChange={(e) => onWebSearchToggle(e.target.checked)}
+                disabled={disabled}
+              />
+              <span>Enable Web Search</span>
+            </label>
+            <p className="web-search-hint">
+              Models will search the web for current information. Adds ~$0.001 per model query.
+            </p>
           </div>
 
           {/* Enhancements */}

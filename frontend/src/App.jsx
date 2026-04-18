@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Sidebar from './components/Sidebar';
 import ChatInterface from './components/ChatInterface';
 import ModeSelector from './components/ModeSelector';
@@ -43,7 +43,9 @@ function App() {
 
   // Conversations state
   const [conversations, setConversations] = useState([]);
-  const [currentConversationId, setCurrentConversationId] = useState(null);
+  const [currentConversationId, setCurrentConversationId] = useState(() => {
+    return sessionStorage.getItem('currentConversationId') || null;
+  });
   const [currentConversation, setCurrentConversation] = useState(null);
   const [conversationState, setConversationState] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -58,6 +60,14 @@ function App() {
   const [pendingMessage, setPendingMessage] = useState(null);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
 
+  // Delete confirmation dialog state
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+
+  // Message queue for queuing messages while a response is in progress
+  const messageQueueRef = useRef([]);
+  const [queueLength, setQueueLength] = useState(0);
+
   // Config state
   const [config, setConfig] = useState(null);
 
@@ -66,12 +76,29 @@ function App() {
   const [selectedCouncilType, setSelectedCouncilType] = useState('general');
   const [rolesEnabled, setRolesEnabled] = useState(false);
   const [selectedEnhancements, setSelectedEnhancements] = useState([]);
+  const [webSearchEnabled, setWebSearchEnabled] = useState(false);
 
-  // Load config and conversations on auth
+  // Persist current conversation ID to sessionStorage
+  useEffect(() => {
+    if (currentConversationId) {
+      sessionStorage.setItem('currentConversationId', currentConversationId);
+    } else {
+      sessionStorage.removeItem('currentConversationId');
+    }
+  }, [currentConversationId]);
+
+  // Load config and conversations on auth, restore last conversation
   useEffect(() => {
     if (authenticated) {
       loadConfig();
-      loadConversations();
+      loadConversations().then(() => {
+        const savedId = sessionStorage.getItem('currentConversationId');
+        if (savedId && !currentConversationId) {
+          setCurrentConversationId(savedId);
+          loadConversation(savedId);
+          loadConversationState(savedId);
+        }
+      });
     }
   }, [authenticated]);
 
@@ -135,6 +162,31 @@ function App() {
       }
     } catch (error) {
       console.error('Failed to archive conversation:', error);
+    }
+  };
+
+  const handleDeleteConversation = (conversationId) => {
+    setDeleteTarget(conversationId);
+    setShowDeleteDialog(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    const targetId = deleteTarget;
+    setShowDeleteDialog(false);
+    setDeleteTarget(null);
+    if (!targetId) return;
+    // Remove from local state immediately for instant UI feedback
+    setConversations(prev => prev.filter(c => c.id !== targetId));
+    if (targetId === currentConversationId) {
+      setCurrentConversationId(null);
+      setCurrentConversation(null);
+    }
+    try {
+      await api.deleteConversation(targetId);
+    } catch (error) {
+      console.error('Failed to delete conversation:', error);
+      // Reload to restore if delete failed
+      await loadConversations();
     }
   };
 
@@ -228,7 +280,7 @@ function App() {
     }
   };
 
-  const handleSendMessage = async (content) => {
+  const handleSendMessage = async (content, files) => {
     if (!currentConversationId) return;
 
     // Check if there's an active multi-round session (debate or socratic)
@@ -239,11 +291,18 @@ function App() {
       return;
     }
 
+    // If already loading, queue the message
+    if (isLoading) {
+      messageQueueRef.current.push(content);
+      setQueueLength(messageQueueRef.current.length);
+      return;
+    }
+
     // No active session, proceed normally
-    await sendMessageDirectly(content);
+    await sendMessageDirectly(content, files);
   };
 
-  const sendMessageDirectly = async (content) => {
+  const sendMessageDirectly = async (content, files) => {
     // Capture conversation ID at start (for background processing support)
     const targetConvId = currentConversationId;
 
@@ -291,12 +350,27 @@ function App() {
         messages: [...prev.messages, assistantMessage],
       }));
 
+      // Upload files if any
+      let uploadedAttachments = [];
+      if (files && files.length > 0) {
+        for (const af of files) {
+          try {
+            const result = await api.uploadFile(targetConvId, af.file);
+            uploadedAttachments.push(result);
+          } catch (err) {
+            console.error('File upload failed:', err);
+          }
+        }
+      }
+
       // Send message with streaming and options
       const options = {
         mode: selectedMode,
         councilType: selectedCouncilType,
         rolesEnabled,
         enhancements: selectedEnhancements,
+        webSearch: webSearchEnabled,
+        attachments: uploadedAttachments,
       };
 
       await api.sendMessageStream(targetConvId, content, (eventType, event) => {
@@ -574,12 +648,22 @@ function App() {
             if (targetConvId !== currentConversationId) {
               setUnreadConversations(prev => new Set(prev).add(targetConvId));
             } else {
-              setIsLoading(false);
+              // Process next queued message, or stop loading
+              if (messageQueueRef.current.length > 0) {
+                const nextMessage = messageQueueRef.current.shift();
+                setQueueLength(messageQueueRef.current.length);
+                sendMessageDirectly(nextMessage);
+              } else {
+                setIsLoading(false);
+              }
             }
             break;
 
           case 'error':
             console.error('Stream error:', event.message);
+            // Clear queue on error
+            messageQueueRef.current = [];
+            setQueueLength(0);
             // Remove from loading set
             setLoadingConversations(prev => {
               const next = new Set(prev);
@@ -597,6 +681,9 @@ function App() {
       }, options);
     } catch (error) {
       console.error('Failed to send message:', error);
+      // Clear queue on error
+      messageQueueRef.current = [];
+      setQueueLength(0);
       // Remove optimistic messages on error (only if still viewing this conversation)
       updateConversation((prev) => ({
         ...prev,
@@ -739,6 +826,7 @@ function App() {
         onSelectConversation={handleSelectConversation}
         onNewConversation={handleNewConversation}
         onArchiveConversation={handleArchiveConversation}
+        onDeleteConversation={handleDeleteConversation}
         onLogout={handleLogout}
         showArchived={showArchived}
         onToggleShowArchived={handleToggleShowArchived}
@@ -754,10 +842,12 @@ function App() {
             selectedCouncilType={selectedCouncilType}
             rolesEnabled={rolesEnabled}
             selectedEnhancements={selectedEnhancements}
+            webSearchEnabled={webSearchEnabled}
             onModeChange={setSelectedMode}
             onCouncilTypeChange={setSelectedCouncilType}
             onRolesToggle={setRolesEnabled}
             onEnhancementsChange={setSelectedEnhancements}
+            onWebSearchToggle={setWebSearchEnabled}
             disabled={isLoading}
           />
         )}
@@ -766,6 +856,7 @@ function App() {
           conversation={currentConversation}
           onSendMessage={handleSendMessage}
           isLoading={isLoading}
+          queueLength={queueLength}
           selectedMode={selectedMode}
           conversationState={conversationState}
         />
@@ -798,6 +889,21 @@ function App() {
         ]}
         onSelect={handleConfirmDialogSelect}
         onCancel={handleConfirmDialogCancel}
+      />
+
+      <ConfirmDialog
+        isOpen={showDeleteDialog}
+        title="Delete Conversation"
+        message="This conversation and all its data will be permanently deleted. This cannot be undone."
+        options={[
+          {
+            label: 'Delete',
+            value: 'delete',
+            variant: 'danger',
+          },
+        ]}
+        onSelect={handleConfirmDelete}
+        onCancel={() => { setShowDeleteDialog(false); setDeleteTarget(null); }}
       />
     </div>
   );

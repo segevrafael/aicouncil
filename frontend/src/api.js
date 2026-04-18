@@ -197,6 +197,32 @@ export const api = {
   },
 
   // =============================================================================
+  // FILE UPLOADS
+  // =============================================================================
+
+  /**
+   * Upload a file attachment for a conversation.
+   * @param {string} conversationId - The conversation ID
+   * @param {File} file - The file to upload
+   * @returns {Promise<object>} Upload result with storage_path, category, etc.
+   */
+  async uploadFile(conversationId, file) {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const headers = await getHeaders(false); // No Content-Type — browser sets multipart boundary
+    const response = await fetch(
+      `${API_BASE}/api/conversations/${conversationId}/upload`,
+      {
+        method: 'POST',
+        headers,
+        body: formData,
+      }
+    );
+    return handleResponse(response);
+  },
+
+  // =============================================================================
   // MESSAGES
   // =============================================================================
 
@@ -226,6 +252,8 @@ export const api = {
           chairman_model: options.chairmanModel || null,
           roles_enabled: options.rolesEnabled || false,
           enhancements: options.enhancements || [],
+          web_search: options.webSearch || false,
+          attachments: options.attachments || [],
         }),
       }
     );
@@ -254,6 +282,8 @@ export const api = {
           chairman_model: options.chairmanModel || null,
           roles_enabled: options.rolesEnabled || false,
           enhancements: options.enhancements || [],
+          web_search: options.webSearch || false,
+          attachments: options.attachments || [],
         }),
       }
     );
